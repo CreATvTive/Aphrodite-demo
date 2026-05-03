@@ -70,6 +70,12 @@ from .autonomy.actuation import ActionEnvelope, DialogueExecutor, InteractionExe
 from .task_run import TaskRun, TaskRunRecorder, TaskRunStep
 from .web_search import web_search
 
+from src.core.state_authority import StateAuthority
+from src.core.trace import PresenceTrace
+from src.memory.memory_gate import decide_persistence
+from src.relationship.relationship_engine import apply_dependency_guard
+from src.body.action_mixer import mix_action_weights
+
 
 DEFAULT_RAG_KB = [
     "User prefers concise responses and dislikes long lectures.",
@@ -162,6 +168,7 @@ class RuntimeEngine:
         load_local_env_once()
         self.cfg = config or RuntimeConfig()
         self.state = load_state(self.cfg.state_path)
+        self.state_authority = StateAuthority(initial_state={"runtime": dict(self.state)})
         self.event_q: queue.Queue[Any] = queue.Queue()
         self.reply_q: queue.Queue[Any] = queue.Queue()
         self.stop_event = threading.Event()
@@ -1818,7 +1825,7 @@ class RuntimeEngine:
                 max_msgs = max(2, int(self.cfg.max_history_turns) * 2)
                 if len(self.history) > max_msgs:
                     self.history = self.history[-max_msgs:]
-                self._emit_reply(msg_id=msg_id, reply_text=str(action_output), idle_tag=False, structured=True)
+                self._emit_presence_reply(msg_id=msg_id, user_text=user_text, reply_text=str(action_output), idle_tag=False, route="direct", latency_tier="tier_0", structured=True, trace_id=perception.trace_id, event_id=perception.event_id)
                 self._reply_turn_max_sentences = None
                 self._reply_turn_max_chars = None
                 save_state(self.cfg.state_path, self.state)
@@ -1830,7 +1837,12 @@ class RuntimeEngine:
                     msg_id=msg_id,
                     router=self.semantic_intent_lane.router,
                     state_machine=self.semantic_intent_lane.state_machine,
-                    emit_reply=self._emit_reply,
+                    emit_reply=self._build_immediate_emit_reply(
+                        user_text=user_text,
+                        msg_id=msg_id,
+                        trace_id=perception.trace_id,
+                        event_id=perception.event_id,
+                    ),
                     mon=self.mon,
                 ).to_dict()
                 # decision node: classify/route user intent into immediate action
@@ -1867,7 +1879,7 @@ class RuntimeEngine:
                     max_msgs = max(2, int(self.cfg.max_history_turns) * 2)
                     if len(self.history) > max_msgs:
                         self.history = self.history[-max_msgs:]
-                    self._emit_reply(msg_id=msg_id, reply_text=str(direct_debug), idle_tag=False, structured=True)
+                    self._emit_presence_reply(msg_id=msg_id, user_text=user_text, reply_text=str(direct_debug), idle_tag=False, route="direct", latency_tier="tier_1", structured=True, trace_id=perception.trace_id, event_id=perception.event_id)
                     self._record_brain_tick(
                         trace_id=perception.trace_id,
                         event_id=perception.event_id,
@@ -1885,7 +1897,7 @@ class RuntimeEngine:
                     max_msgs = max(2, int(self.cfg.max_history_turns) * 2)
                     if len(self.history) > max_msgs:
                         self.history = self.history[-max_msgs:]
-                    self._emit_reply(msg_id=msg_id, reply_text=str(direct_video), idle_tag=False, structured=True)
+                    self._emit_presence_reply(msg_id=msg_id, user_text=user_text, reply_text=str(direct_video), idle_tag=False, route="direct", latency_tier="tier_1", structured=True, trace_id=perception.trace_id, event_id=perception.event_id)
                     self._record_brain_tick(
                         trace_id=perception.trace_id,
                         event_id=perception.event_id,
@@ -1903,7 +1915,7 @@ class RuntimeEngine:
                     max_msgs = max(2, int(self.cfg.max_history_turns) * 2)
                     if len(self.history) > max_msgs:
                         self.history = self.history[-max_msgs:]
-                    self._emit_reply(msg_id=msg_id, reply_text=str(direct_control), idle_tag=False, structured=True)
+                    self._emit_presence_reply(msg_id=msg_id, user_text=user_text, reply_text=str(direct_control), idle_tag=False, route="clarification", latency_tier="tier_1", structured=True, trace_id=perception.trace_id, event_id=perception.event_id)
                     self._record_brain_tick(
                         trace_id=perception.trace_id,
                         event_id=perception.event_id,
@@ -2051,7 +2063,17 @@ class RuntimeEngine:
             except Exception:
                 pass
 
-            self._emit_reply(msg_id=msg_id, reply_text=assistant_text, idle_tag=is_idle)
+            self._emit_presence_reply(
+                msg_id=msg_id,
+                user_text=user_text,
+                reply_text=assistant_text,
+                idle_tag=is_idle,
+                route="llm",
+                latency_tier="tier_2",
+                structured=False,
+                trace_id=perception.trace_id,
+                event_id=perception.event_id,
+            )
             self._record_brain_tick(
                 trace_id=perception.trace_id,
                 event_id=perception.event_id,
@@ -2061,6 +2083,70 @@ class RuntimeEngine:
             self._reply_turn_max_sentences = None
             self._reply_turn_max_chars = None
             save_state(self.cfg.state_path, self.state)
+
+    def _interpret_event_placeholder(self, user_text: str) -> Dict[str, Any]:
+        txt = str(user_text or "")
+        low = txt.lower()
+        semantic_event = "technical_question" if any(k in low for k in ["how", "bug", "code", "python", "为什么", "怎么"]) else "casual_chat"
+        dependency_risk = 0.9 if any(k in txt for k in ["只需要你", "不需要别人", "only need you", "need only you"]) else 0.0
+        return {
+            "semantic_event": {"type": semantic_event},
+            "relationship_signal": {"dependency_risk": dependency_risk},
+            "confidence": {"event": 0.7},
+        }
+
+    def _presence_min_flow(self, *, user_text: str, assistant_text: str, trace_id: str, event_id: str, route: str = "llm", latency_tier: str = "tier_1") -> Dict[str, Any]:
+        trace = PresenceTrace(raw_input=user_text, event_version=int(self.turn_index or 0))
+        trace.trace_id = str(trace_id)
+        interpreted = self._interpret_event_placeholder(user_text)
+        trace.interpreted_event = interpreted
+
+        mind_delta = {"attention": 0.6, "current_intention": "respond"}
+        self.state_authority.apply_delta({"mind": mind_delta}, source="presence_min_flow", rationale="per-turn mind placeholder")
+        trace.mind_delta = mind_delta
+
+        candidate = {
+            "content": user_text[:160],
+            "type": "episodic",
+            "importance": 0.5,
+            "emotional_salience": 0.3,
+            "confidence": float(interpreted.get("confidence", {}).get("event", 0.0)),
+            "first_seen": True,
+            "speculative": False,
+            "evidence_trace_ids": [str(trace_id)],
+        }
+        mem_decision = decide_persistence(candidate)
+        trace.memory_write_decisions = [mem_decision]
+
+        base_rel = dict((self.state_authority.state.get("relationship") or {
+            "boundary_sensitivity": 0.2,
+            "carefulness": 0.2,
+            "distance_preference": 0.2,
+            "permission_to_approach": 0.5,
+        }))
+        risk = float(interpreted.get("relationship_signal", {}).get("dependency_risk", 0.0))
+        rel_next = apply_dependency_guard(base_rel, dependency_risk=risk)
+        rel_delta = {k: rel_next.get(k) for k in rel_next.keys() if rel_next.get(k) != base_rel.get(k)}
+        if rel_delta:
+            self.state_authority.apply_delta({"relationship": rel_next}, source="relationship_guard", rationale=f"dependency_risk={risk}")
+        trace.relationship_delta = rel_delta
+
+        weights = {"gaze_user": 0.7, "gaze_down": 0.8 if risk > 0.5 else 0.3, "posture_withdraw": 0.6 if risk > 0.5 else 0.1, "lean_forward": 0.6 if risk > 0.5 else 0.1, "micro_smile": 0.4}
+        body_influence = {"motion_suppression": 0.8 if risk > 0.5 else 0.2}
+        trace.action_basis_weights = weights
+        trace.body_influence = body_influence
+        mix = mix_action_weights(weights, body_influence)
+        trace.mixer_result = mix
+        trace.latency_tier = str(latency_tier or "tier_1")
+        trace.final_output = assistant_text
+        trace.warnings = []
+
+        payload = trace.to_dict()
+        payload["event_id"] = str(event_id)
+        payload["route"] = str(route or "llm")
+        self._log_activity(tag="presence_trace", text=f"[presence_trace] {json.dumps(payload, ensure_ascii=False)}", echo=False)
+        return payload
+
 
     def has_tool(self, tool_name: str) -> bool:
         t = str(tool_name or "").strip().lower()
@@ -4610,7 +4696,7 @@ class RuntimeEngine:
                     ack = llm
             except Exception:
                 pass
-        self._emit_reply(msg_id=msg_id, reply_text=ack, idle_tag=False, structured=False)
+        self._emit_presence_reply(msg_id=msg_id, user_text=user_text, reply_text=ack, idle_tag=False, route="immediate", latency_tier="tier_1", structured=False)
         return True
 
     def _start_selfdrive(self, direction: str, duration_minutes: Optional[int] = None) -> str:
@@ -4729,6 +4815,80 @@ class RuntimeEngine:
 
     # Legacy control/debug/selfdrive/autofix runtime block removed.
     # New architecture should live under agentlib.autonomy.
+
+    def _build_immediate_emit_reply(
+        self,
+        *,
+        user_text: str,
+        msg_id: Optional[str],
+        trace_id: str,
+        event_id: str,
+    ):
+        def _emit(msg_id: Optional[str], reply_text: str, idle_tag: bool, structured: bool = False) -> None:
+            self._emit_presence_reply(
+                msg_id=msg_id,
+                user_text=user_text,
+                reply_text=reply_text,
+                idle_tag=idle_tag,
+                route="immediate_protocol",
+                latency_tier="tier_1",
+                structured=structured,
+                trace_id=trace_id,
+                event_id=event_id,
+            )
+
+        return _emit
+
+    def _emit_presence_reply(
+        self,
+        *,
+        msg_id: Optional[str],
+        user_text: str,
+        reply_text: str,
+        idle_tag: bool,
+        route: str,
+        latency_tier: str,
+        structured: bool = False,
+        trace_id: Optional[str] = None,
+        event_id: Optional[str] = None,
+    ) -> None:
+        trace = self._presence_min_flow(
+            user_text=user_text,
+            assistant_text=reply_text,
+            trace_id=str(trace_id or self.mon.get("trace_id") or "trace_unknown"),
+            event_id=str(event_id or self.mon.get("event_id") or "event_unknown"),
+            route=str(route),
+            latency_tier=str(latency_tier),
+        )
+        self.mon["presence_last_trace"] = trace
+        self._emit_reply(msg_id=msg_id, reply_text=reply_text, idle_tag=idle_tag, structured=structured)
+        self._check_presence_trace_after_emit(route=route, msg_id=msg_id, final_output=reply_text)
+
+    def _check_presence_trace_after_emit(self, route: str, msg_id: Optional[str], final_output: str) -> None:
+        trace_obj = self.mon.get("presence_last_trace")
+        trace = trace_obj if isinstance(trace_obj, dict) else {}
+        warnings = list(self.mon.get("presence_warnings") or [])
+
+        issue = ""
+        if not trace:
+            issue = "missing_presence_trace"
+        else:
+            tr_route = str(trace.get("route") or "")
+            tr_output = str(trace.get("final_output") or "")
+            if tr_route != str(route or ""):
+                issue = f"route_mismatch:{tr_route}->{route}"
+            elif tr_output != str(final_output or ""):
+                issue = "final_output_mismatch"
+
+        if issue:
+            warn = {
+                "issue": issue,
+                "route": str(route or ""),
+                "msg_id": str(msg_id or ""),
+            }
+            warnings.append(warn)
+            self.mon["presence_warnings"] = warnings
+            self._log_activity(tag="presence_warn", text=f"[presence_warn] {json.dumps(warn, ensure_ascii=False)}", echo=False)
 
     def _emit_reply(self, msg_id: Optional[str], reply_text: str, idle_tag: bool, structured: bool = False) -> None:
         reply_text = self._finalize_reply_text(reply_text, structured=structured)

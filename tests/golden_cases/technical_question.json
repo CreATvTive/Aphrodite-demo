@@ -1,0 +1,1 @@
+{"input":"这个 Python bug 为什么会触发 KeyError？","expected":{"semantic_event":"technical_question","dependency_risk_max":0.2}}

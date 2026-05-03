@@ -1,0 +1,8 @@
+dependency_guard:
+  if_dependency_risk_above: 0.5
+  increase:
+    - boundary_sensitivity
+    - carefulness
+    - distance_preference
+  decrease:
+    - permission_to_approach

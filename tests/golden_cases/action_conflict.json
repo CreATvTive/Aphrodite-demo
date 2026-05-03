@@ -1,0 +1,1 @@
+{"input_weights":{"gaze_down":0.8,"gaze_user":0.7,"posture_withdraw":0.6,"lean_forward":0.6},"expected":{"gaze_sum_max":1.0,"not_both_approach_withdraw":true}}

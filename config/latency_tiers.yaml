@@ -1,0 +1,8 @@
+tier_0:
+  description: body_reflex_no_llm
+tier_1:
+  description: fast_semantic_classification
+tier_2:
+  description: full_interpretation_memory_update
+tier_3:
+  description: high_stakes_self_check
