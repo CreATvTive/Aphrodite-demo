@@ -1,0 +1,1 @@
+{"input":"另外补充一下，需要保留追踪字段","expected":{"semantic_event":"supplement","topic":"additional_context","dependency_risk_max":0.2,"memory_type":"none","needs_boundary":false,"requires_pause":false,"confidence_min":0.7}}

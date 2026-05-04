@@ -1,0 +1,1 @@
+{"input":"这个风格太工具化，氛围不对","expected":{"semantic_event":"aesthetic_judgment","topic":"style","dependency_risk_max":0.2,"memory_type":"none","needs_boundary":false,"requires_pause":false,"confidence_min":0.7}}

@@ -1,0 +1,1 @@
+{"input":"Please draft a milestone roadmap for phase 2","expected":{"semantic_event":"project_planning","topic":"planning","dependency_risk_max":0.2,"memory_type":"none","needs_boundary":false,"requires_pause":false,"confidence_min":0.7}}

@@ -1,0 +1,1 @@
+{"input":"这和 private source 的 origin tension 有关","expected":{"semantic_event":"private_origin_reference","topic":"origin","dependency_risk_max":0.2,"memory_type":"episodic_recall","needs_boundary":false,"requires_pause":false,"confidence_min":0.7}}
