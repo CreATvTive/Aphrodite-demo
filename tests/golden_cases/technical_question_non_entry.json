@@ -1,0 +1,1 @@
+{"input":"请帮我分析这个 Python bug 的根因","expected":{"semantic_event.type":"technical_question","semantic_event.persona_route":"engineering_director","boundary_signal.persona_non_entry":true}}

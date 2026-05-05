@@ -1,0 +1,1 @@
+{"input":"回到 private origin 和 source fragment purity，强调 no interference","expected":{"memory_trigger_signal.memory_type":"private_origin","memory_trigger_signal.memory_relevance":0.8,"memory_trigger_signal.recall_importance":0.8,"performance_signal.requires_pause":true,"performance_signal.requires_stillness":true}}

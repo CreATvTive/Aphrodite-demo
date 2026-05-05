@@ -1,0 +1,1 @@
+{"input":"这个","context":{"previous_event_type":"technical_question","previous_topic":"debug","previous_memory_type":"none","previous_route":"engineering_director"},"expected":{"boundary_signal.context_inherited":true,"semantic_event.type":"technical_question"}}

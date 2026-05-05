@@ -75,6 +75,7 @@ from src.core.trace import PresenceTrace
 from src.memory.memory_gate import decide_persistence
 from src.relationship.relationship_engine import apply_dependency_guard
 from src.body.action_mixer import mix_action_weights
+from src.interpreter.input_interpreter import InputInterpreter
 
 
 DEFAULT_RAG_KB = [
@@ -255,6 +256,8 @@ class RuntimeEngine:
             required_runtime_triggers=REQUIRED_RUNTIME_TRIGGERS,
         )
         self.immediate_protocol = ImmediateReplyProtocol()
+        self.input_interpreter = InputInterpreter()
+        self._last_interpreted_context: Dict[str, Any] = {}
         self.nl_control_overlay_min_margin = self._env_float("NL_CONTROL_OVERLAY_MIN_MARGIN", 0.12)
         self.debug_local_model_min_confidence = self._env_float("DEBUG_LOCAL_MODEL_MIN_CONFIDENCE", 0.68)
         self.debug_state_window_sec = self._env_float("DEBUG_STATE_WINDOW_SEC", 600.0)
@@ -2085,15 +2088,17 @@ class RuntimeEngine:
             save_state(self.cfg.state_path, self.state)
 
     def _interpret_event_placeholder(self, user_text: str) -> Dict[str, Any]:
-        txt = str(user_text or "")
-        low = txt.lower()
-        semantic_event = "technical_question" if any(k in low for k in ["how", "bug", "code", "python", "为什么", "怎么"]) else "casual_chat"
-        dependency_risk = 0.9 if any(k in txt for k in ["只需要你", "不需要别人", "only need you", "need only you"]) else 0.0
-        return {
-            "semantic_event": {"type": semantic_event},
-            "relationship_signal": {"dependency_risk": dependency_risk},
-            "confidence": {"event": 0.7},
+        context = dict(self._last_interpreted_context or {})
+        interpreted = self.input_interpreter.interpret(user_text, context=context if context else None)
+        sem = interpreted.get("semantic_event", {}) if isinstance(interpreted, dict) else {}
+        mem = interpreted.get("memory_trigger_signal", {}) if isinstance(interpreted, dict) else {}
+        self._last_interpreted_context = {
+            "previous_event_type": sem.get("type"),
+            "previous_topic": sem.get("topic"),
+            "previous_memory_type": mem.get("memory_type"),
+            "previous_route": sem.get("persona_route"),
         }
+        return interpreted
 
     def _presence_min_flow(self, *, user_text: str, assistant_text: str, trace_id: str, event_id: str, route: str = "llm", latency_tier: str = "tier_1") -> Dict[str, Any]:
         trace = PresenceTrace(raw_input=user_text, event_version=int(self.turn_index or 0))
