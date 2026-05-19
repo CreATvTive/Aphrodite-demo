@@ -5,7 +5,7 @@ from src.interpreter.input_interpreter import InputInterpreter
 
 
 def _load(name: str):
-    return json.loads(Path('tests/golden_cases').joinpath(name).read_text())
+    return json.loads(Path('tests/golden_cases').joinpath(name).read_text(encoding="utf-8"))
 
 
 def test_golden_cases_phase22():

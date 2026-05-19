@@ -8,7 +8,9 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from .glm_client import GLMClient
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
+GLMClient = None  # type: ignore[assignment]  # placeholder for test mocking
 from .persona_profiles import PersonaProfile, get_persona_profile, list_persona_profiles
 from .web_search import web_search
 

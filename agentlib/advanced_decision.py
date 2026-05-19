@@ -5,7 +5,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .glm_client import GLMClient
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
 
 
 @dataclass(frozen=True)

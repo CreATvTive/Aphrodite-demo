@@ -45,8 +45,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertIn("[idewatch] enabled=1;", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_plain_debug_request_does_not_trigger_debug_mode(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_plain_debug_request_does_not_trigger_debug_mode(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("we are discussing debug theory today")
@@ -89,8 +90,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertNotEqual(str(out), "[debug] 已写入调试模块（Activity）。")
 
     @patch("agentlib.runtime_engine.companion_rag.retrieve_memory_context")
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_route_control_reply_prefers_llm_ack(self, mock_glm_cls, mock_retrieve_memory):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_route_control_reply_prefers_llm_ack(self, mock_ds_cls, mock_glm_cls, mock_retrieve_memory):
         mock_retrieve_memory.return_value = ["用户偏好：先给结论，再给进展"]
         mock_glm_cls.return_value.chat.return_value = "我按你的习惯先给结论，后台继续修复，有结果马上告诉你。"
         e = RuntimeEngine()
@@ -105,8 +107,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIn("后台继续修复", str(out))
         self.assertNotIn("[idewatch]", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_route_control_reply_falls_back_when_llm_unavailable(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_route_control_reply_falls_back_when_llm_unavailable(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         e.activity_ack_llm_enabled = True
@@ -119,8 +122,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         out = e.reply_q.get_nowait()
         self.assertIn("Activity", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_semantic_enable_for_free_form_intent(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_semantic_enable_for_free_form_intent(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = '{"action":"enable","confidence":0.94}'
         e = RuntimeEngine()
         e.debug_local_model_enabled = False
@@ -128,8 +132,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIsNotNone(out)
         self.assertIn("[idewatch] auto_fix=1; mode=continuous;", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_semantic_status_for_free_form_intent(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_semantic_status_for_free_form_intent(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = '{"action":"status","confidence":0.96}'
         e = RuntimeEngine()
         out = e._handle_natural_language_control("what is debug monitor status now")
@@ -137,8 +142,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIn("[idewatch] enabled=", str(out))
         self.assertIn("debug_echo=", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_overlay_semantic_can_start_selfdrive_for_free_form_cn_request(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_overlay_semantic_can_start_selfdrive_for_free_form_cn_request(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = (
             '{"channel":"selfdrive","action":"start","confidence":0.98,'
             '"duration_minutes":480,"direction":"搜索AI合成音色并学习调教与翻唱"}'
@@ -151,8 +157,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIn("[selfdrive] started", str(out))
         self.assertTrue(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_selfdrive_local_semantic_can_start_on_delegated_crawler_request(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_selfdrive_local_semantic_can_start_on_delegated_crawler_request(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("我需要你给自己做一个网络爬虫，用于你接下来的数据搜索")
@@ -161,16 +168,18 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertTrue(bool(e.mon.get("selfdrive_enabled", 0)))
         self.assertIn("网络爬虫", str(e.mon.get("selfdrive_goal", "")))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_selfdrive_local_semantic_does_not_trigger_on_plain_crawler_topic(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_selfdrive_local_semantic_does_not_trigger_on_plain_crawler_topic(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("我想了解一下网络爬虫的基本原理")
         self.assertIsNone(out)
         self.assertFalse(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_selfdrive_local_semantic_can_start_on_generic_delegated_task(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_selfdrive_local_semantic_can_start_on_generic_delegated_task(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("请你接下来给自己做一个数据采集工具，并持续优化稳定性")
@@ -178,16 +187,18 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIn("[selfdrive] started", str(out))
         self.assertTrue(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_selfdrive_local_semantic_does_not_trigger_on_what_is_question(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_selfdrive_local_semantic_does_not_trigger_on_what_is_question(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("什么是自驱系统，它的原理是什么")
         self.assertIsNone(out)
         self.assertFalse(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_overlay_shadow_mode_records_without_execution(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_overlay_shadow_mode_records_without_execution(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = (
             '{"channel":"selfdrive","action":"start","confidence":0.96,'
             '"duration_minutes":60,"direction":"improve tests"}'
@@ -202,8 +213,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertEqual(int(e.mon.get("nl_overlay_shadow_hits", 0)), 1)
         self.assertFalse(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_overlay_ambiguous_prediction_is_rejected(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_overlay_ambiguous_prediction_is_rejected(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = (
             '{"channel":"selfdrive","action":"start","confidence":0.88,'
             '"alt_action":"plan","alt_confidence":0.83,'
@@ -219,8 +231,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertEqual(int(e.mon.get("nl_overlay_ambiguous", 0)), 1)
         self.assertFalse(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_overlay_abstain_does_not_execute(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_overlay_abstain_does_not_execute(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.return_value = (
             '{"channel":"none","action":"none","confidence":0.40,'
             '"abstain":true,"reason":"uncertain"}'
@@ -234,16 +247,18 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertEqual(int(e.mon.get("nl_overlay_abstain", 0)), 1)
         self.assertFalse(bool(e.mon.get("selfdrive_enabled", 0)))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_semantic_local_fallback_when_llm_unavailable(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_semantic_local_fallback_when_llm_unavailable(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("please fix this bug")
         self.assertIsNotNone(out)
         self.assertIn("[idewatch] auto_fix=1; mode=continuous;", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_free_form_bug_fix_sentence_triggers_debug(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_free_form_bug_fix_sentence_triggers_debug(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("please fix this bug")
@@ -252,16 +267,18 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertTrue(bool(e.cfg.ide_watch_enabled))
         self.assertTrue(bool(e.cfg.ide_auto_fix_enabled))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_bug_only_sentence_still_triggers_autofix_fallback(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_bug_only_sentence_still_triggers_autofix_fallback(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("this has a bug")
         self.assertIsNotNone(out)
         self.assertIn("[idewatch] auto_fix=1; mode=continuous;", str(out))
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_chinese_direct_debug_request_hits_debug_flow(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_chinese_direct_debug_request_hits_debug_flow(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("帮我debug一下")
@@ -286,16 +303,18 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertIn("[selfcheck:OK]", str(out))
         self.assertEqual(e._prompt_clone_pending_target, "sherlock")
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_state_machine_followup_short_command(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_state_machine_followup_short_command(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         e._handle_natural_language_control("watch IDE errors")
         out = e._handle_natural_language_control("turn it off")
         self.assertEqual(out, "[idewatch] enabled=0; auto_fix=0")
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_state_machine_short_command_without_context_noop(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_state_machine_short_command_without_context_noop(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("turn it off")
@@ -323,8 +342,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         out = e._execute_selfdrive_action(action="autopilot_once", goal="x", task="")
         self.assertIn("blocked", str(out).lower())
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_autopilot_task_falls_back_to_glm_patch_when_codex_unavailable(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_autopilot_task_falls_back_to_glm_patch_when_codex_unavailable(self, mock_ds_cls, mock_glm_cls):
         with tempfile.TemporaryDirectory() as td:
             old_cwd = os.getcwd()
             try:
@@ -349,8 +369,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
             finally:
                 os.chdir(old_cwd)
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_autopilot_task_reports_failure_when_codex_and_glm_unavailable(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_autopilot_task_reports_failure_when_codex_and_glm_unavailable(self, mock_ds_cls, mock_glm_cls):
         with tempfile.TemporaryDirectory() as td:
             old_cwd = os.getcwd()
             try:
@@ -435,8 +456,9 @@ class RuntimeDebugNaturalLanguageTests(unittest.TestCase):
         self.assertEqual(int(e.mon.get("selfdrive_unbounded", 0)), 1)
         self.assertEqual(float(e.mon.get("selfdrive_deadline_ts", -1.0)), 0.0)
 
-    @patch("agentlib.runtime_engine.GLMClient")
-    def test_selfdrive_nl_start_without_duration_is_unbounded(self, mock_glm_cls):
+    @patch("agentlib.runtime_engine.GLMClient", create=True)
+    @patch("agentlib.runtime_engine.DSClient", create=True)
+    def test_selfdrive_nl_start_without_duration_is_unbounded(self, mock_ds_cls, mock_glm_cls):
         mock_glm_cls.return_value.chat.side_effect = RuntimeError("llm unavailable")
         e = RuntimeEngine()
         out = e._handle_natural_language_control("请你开始自推进，优化稳定性并新增一个小功能")

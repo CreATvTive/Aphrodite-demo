@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentlib.autonomy.actuation import (
+from agentlib.autonomy.actuation import (  # noqa: E402
     ActionEnvelope,
     DialogueExecutor,
     FailureClass,

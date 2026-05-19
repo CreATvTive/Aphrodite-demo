@@ -24,8 +24,5 @@
   },
   "enable_adjudicator": false,
   "log_level": "INFO",
-  "json_log": false,
-  "config_version": "cfg_default_v1",
-  "policy_version": "semantic_policy_v2",
-  "dataset_version": "eval_dataset_v1"
+  "json_log": false
 }

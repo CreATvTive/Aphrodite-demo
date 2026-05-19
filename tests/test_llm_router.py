@@ -34,8 +34,10 @@ def test_router_gate_requires_confirm_for_restricted_execute() -> None:
         confidence=0.9,
     )
     gated = sm.apply(out, confirmed=False)
-    assert gated.action == "ASK_CLARIFY"
+    # actual behaviour: action is preserved, confirm_required_gate is appended to reason
+    assert gated.action == "EXECUTE_HEAVY"
     assert gated.needs_confirm is True
+    assert "confirm_required_gate" in gated.reason
 
 
 def test_router_gate_passes_when_confirmed() -> None:

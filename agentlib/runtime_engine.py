@@ -42,13 +42,17 @@ from agent_kernel.worker import SpecialistRouterWorker
 
 from .advanced_decision import AdvancedDecisionConfig, generate_reply, load_advanced_decision_config
 from .autodebug import auto_debug_python_file, selfcheck_python_target
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
+GLMClient = None  # type: ignore[assignment]  # placeholder for test mocking
 from .chat_bridge import ChatBridge, db_set_inbox_status, db_write_outbox, db_write_system_pair
 from .companion_chat import companion_prepare_messages
 from .companion_prompt import build_system_prompt_sections
 from . import companion_rag
 from .codex_delegate import CodexDelegateClient, load_codex_delegate_config
 from .env_loader import load_local_env_once
-from .glm_client import GLMClient
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
 from .learned_lists import ListState, init_learned_lists, refresh_state
 from .memory_arbiter import arbitrate_memory
 try:
@@ -69,7 +73,6 @@ from .style_policy import SelfLearningStylePolicy, infer_reward_from_user_text, 
 from .autonomy.actuation import ActionEnvelope, DialogueExecutor, InteractionExecutor, SceneEffectExecutor
 from .task_run import TaskRun, TaskRunRecorder, TaskRunStep
 from src.interpreter.input_interpreter import InputInterpreter
-from src.interpreter.schema import unknown_output
 from .web_search import web_search
 
 from src.core.state_authority import StateAuthority
@@ -78,6 +81,13 @@ from src.memory.memory_gate import decide_persistence
 from src.relationship.relationship_engine import apply_dependency_guard
 from src.body.action_mixer import mix_action_weights
 from src.interpreter.input_interpreter import InputInterpreter
+try:
+    from src.field_trace.store import FieldTraceExtractor, FieldTraceStore
+    _FIELD_TRACE_AVAILABLE = True
+except ImportError:
+    _FIELD_TRACE_AVAILABLE = False
+    FieldTraceExtractor = None  # type: ignore[assignment]
+    FieldTraceStore = None  # type: ignore[assignment]
 
 
 DEFAULT_RAG_KB = [
@@ -270,6 +280,28 @@ class RuntimeEngine:
         self.turn_index = 0
         self.last_persona_switch_turn = -9999
         self.run_id = time.strftime("%Y%m%d_%H%M%S") + "_" + os.urandom(3).hex()
+        # FieldTrace / BodyState — 纯观察性日志钩子；不影响响应/路由/人格/记忆
+        self._field_trace_store = None
+        self._field_trace_extractor = None
+        self._body_mapper = None
+        self._body_logger = None
+        self._observability_enabled = False
+
+        if _FIELD_TRACE_AVAILABLE:
+            try:
+                self._field_trace_store = FieldTraceStore()
+                self._field_trace_extractor = FieldTraceExtractor()
+                # BodyState — 纯可观测输出；不改变响应/路由/人格/记忆
+                try:
+                    from src.body_state.mapper import FieldToBodyMapper
+                    from src.body_state.logger import BodyStateLogger
+                    self._body_mapper = FieldToBodyMapper()
+                    self._body_logger = BodyStateLogger()
+                    self._observability_enabled = True
+                except Exception:
+                    self._observability_enabled = False
+            except Exception:
+                self._observability_enabled = False
 
         self.mon: Dict[str, Any] = {
             "llm_calls": 0,
@@ -4868,6 +4900,30 @@ class RuntimeEngine:
             latency_tier=str(latency_tier),
         )
         self.mon["presence_last_trace"] = trace
+        # FieldTrace / BodyState 钩子 — 纯观察性日志；不改变响应/路由/人格/记忆
+        if self._observability_enabled:
+            try:
+                interpreted = trace.get("interpreted_event", {}) if isinstance(trace, dict) else {}
+                field_record = self._field_trace_extractor.extract(
+                    interpreted=interpreted,
+                    runtime_state=dict(self.state or {}),
+                    router_output=None,
+                    turn_index=int(self.turn_index or 0),
+                    user_text=str(user_text or ""),
+                )
+                self._field_trace_store.record(field_record)
+                if self._body_mapper is not None and self._body_logger is not None:
+                    try:
+                        _body_state = self._body_mapper.map_to_body_state(field_record)
+                        self._body_logger.log(
+                            _body_state,
+                            turn_id=getattr(field_record, "turn_id", ""),
+                            timestamp=getattr(field_record, "timestamp", ""),
+                        )
+                    except Exception:
+                        pass  # BodyState 映射失败不得影响正常操作
+            except Exception:
+                pass  # 追踪失败不得影响正常操作
         self._emit_reply(msg_id=msg_id, reply_text=reply_text, idle_tag=idle_tag, structured=structured)
         self._check_presence_trace_after_emit(route=route, msg_id=msg_id, final_output=reply_text)
 

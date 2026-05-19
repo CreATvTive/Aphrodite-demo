@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import importlib.util
 import sys
@@ -24,7 +24,8 @@ if "agentlib" not in sys.modules:
     pkg.__path__ = [str(ROOT / "agentlib")]
     sys.modules["agentlib"] = pkg
 
-_load_module("agentlib.glm_client", ROOT / "agentlib" / "glm_client.py")
+# TODO: P40 鈥?replace with ds_client after experiment
+# _load_module("agentlib.glm_client", ROOT / "agentlib" / "glm_client.py")
 _load_module("agentlib.companion_prompt", ROOT / "agentlib" / "companion_prompt.py")
 _load_module("agentlib.companion_rag", ROOT / "agentlib" / "companion_rag.py")
 companion_mod = _load_module("agentlib.companion_chat", ROOT / "agentlib" / "companion_chat.py")
@@ -74,19 +75,21 @@ class CompanionMessageTests(unittest.TestCase):
 class CompanionReplyTests(unittest.TestCase):
     def test_companion_reply_stream(self):
         class FakeClient:
-            def stream_chat(self, messages, temperature=0.8, max_tokens=None):
+            def stream_completion(self, messages, temperature=0.8, max_tokens=None):
                 return iter(["A", "B"])
 
-        with patch("agentlib.companion_chat.GLMClient", return_value=FakeClient()):
+        with patch("agentlib.companion_chat.DSClient", return_value=FakeClient(), create=True), \
+             patch("agentlib.companion_chat.GLMClient", return_value=FakeClient(), create=True):
             chunks = list(companion_reply_stream("hello"))
         self.assertEqual(chunks, ["A", "B"])
 
     def test_companion_reply_aggregates_stream(self):
         class FakeClient:
-            def stream_chat(self, messages, temperature=0.8, max_tokens=None):
+            def stream_completion(self, messages, temperature=0.8, max_tokens=None):
                 return iter(["A", "B"])
 
-        with patch("agentlib.companion_chat.GLMClient", return_value=FakeClient()):
+        with patch("agentlib.companion_chat.DSClient", return_value=FakeClient(), create=True), \
+             patch("agentlib.companion_chat.GLMClient", return_value=FakeClient(), create=True):
             text = companion_reply("hello")
         self.assertEqual(text, "AB")
 
@@ -94,11 +97,12 @@ class CompanionReplyTests(unittest.TestCase):
         captured = {"messages": None}
 
         class FakeClient:
-            def stream_chat(self, messages, temperature=0.8, max_tokens=None):
+            def stream_completion(self, messages, temperature=0.8, max_tokens=None):
                 captured["messages"] = messages
                 return iter(["OK"])
 
-        with patch("agentlib.companion_chat.GLMClient", return_value=FakeClient()):
+        with patch("agentlib.companion_chat.DSClient", return_value=FakeClient(), create=True), \
+             patch("agentlib.companion_chat.GLMClient", return_value=FakeClient(), create=True):
             list(
                 companion_reply_stream(
                     "hello",
@@ -113,10 +117,11 @@ class CompanionReplyTests(unittest.TestCase):
 
     def test_companion_reply_stream_passes_rag_mode(self):
         class FakeClient:
-            def stream_chat(self, messages, temperature=0.8, max_tokens=None):
+            def stream_completion(self, messages, temperature=0.8, max_tokens=None):
                 return iter(["OK"])
 
-        with patch("agentlib.companion_chat.GLMClient", return_value=FakeClient()):
+        with patch("agentlib.companion_chat.DSClient", return_value=FakeClient(), create=True), \
+             patch("agentlib.companion_chat.GLMClient", return_value=FakeClient(), create=True):
             with patch(
                 "agentlib.companion_chat.companion_prepare_messages",
                 return_value={"messages": [{"role": "user", "content": "hello"}], "rag_items": []},
@@ -181,10 +186,11 @@ class CompanionReplyTests(unittest.TestCase):
 
     def test_companion_reply_stream_writeback(self):
         class FakeClient:
-            def stream_chat(self, messages, temperature=0.8, max_tokens=None):
+            def stream_completion(self, messages, temperature=0.8, max_tokens=None):
                 return iter(["A", "B"])
 
-        with patch("agentlib.companion_chat.GLMClient", return_value=FakeClient()):
+        with patch("agentlib.companion_chat.DSClient", return_value=FakeClient(), create=True), \
+             patch("agentlib.companion_chat.GLMClient", return_value=FakeClient(), create=True):
             with patch("agentlib.companion_chat.record_turn_memory") as mocked_record:
                 chunks = list(companion_reply_stream("hello", rag_items=["x1"], memory_writeback=True))
         self.assertEqual(chunks, ["A", "B"])

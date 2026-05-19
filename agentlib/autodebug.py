@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .codex_delegate import CodexDelegateClient, load_codex_delegate_config
-from .glm_client import GLMClient
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
 
 
 @dataclass

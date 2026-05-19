@@ -34,7 +34,8 @@ from .goal_stack import Goal, GoalStack
 from .tool_router import ToolDecision, simple_tool_router
 from .memory_arbiter import MemorySlice, arbitrate_memory
 from .sched_core import TaskQueue, Task, ToolExecutor, ToolResult, MemoryGovernance, MemoryItem
-from .glm_client import GLMClient, GLMConfig, GLMClientError, load_glm_config
+# TODO: P40 — replace glm_client with ds_client; import when callers are migrated
+# from .glm_client import GLMClient, GLMConfig, GLMClientError, load_glm_config
 from .companion_chat import (
     build_companion_messages,
     companion_reply,
@@ -123,10 +124,13 @@ __all__ = [
     "ToolResult",
     "MemoryGovernance",
     "MemoryItem",
-    "GLMClient",
-    "GLMConfig",
-    "GLMClientError",
-    "load_glm_config",
+    # TODO: P40 — replace with ds_client (DSClient, DSClientError) after experiment
+    # "GLMClient",
+    # "GLMConfig",
+    # "GLMClientError",
+    # "load_glm_config",
+    # "DSClient",
+    # "DSClientError",
     "build_companion_messages",
     "companion_reply",
     "companion_reply_stream",

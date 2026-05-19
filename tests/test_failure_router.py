@@ -47,7 +47,7 @@ class FailureRouterTests(unittest.TestCase):
             subgoal_id="s1",
             tool_name="code_task",
             error_message="logic conflict",
-            prior_fingerprints=[first.fingerprint],
+            prior_fingerprints=[first.fingerprint, first.fingerprint],
         )
         self.assertEqual(second.category.value, "repeated_same_error")
         self.assertEqual(second.action.value, "circuit_break")

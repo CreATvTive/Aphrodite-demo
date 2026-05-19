@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional
 
-from .glm_client import GLMClient
+# TODO: P40 — replace with ds_client after experiment
+# from .glm_client import GLMClient
+GLMClient = None  # type: ignore[assignment]  # placeholder for test mocking
 from .companion_prompt import build_system_prompt_sections, render_system_prompt
 from .companion_rag import build_rag_context, build_rag_package, render_rag_block
 from .companion_rag import record_turn_memory, retrieve_memory_context
@@ -99,8 +101,8 @@ def companion_reply_stream(
     )
     selected_rag_items = list(prepared.get("rag_items") or [])
     messages = prepared["messages"]
-    client = GLMClient()
-    stream = client.stream_chat(messages=messages, temperature=temperature)
+    client = DSClient()
+    stream = client.stream_completion(messages=messages, temperature=temperature)
 
     if not memory_writeback:
         return stream

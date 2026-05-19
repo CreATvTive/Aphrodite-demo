@@ -180,6 +180,8 @@ class InteractionExecutor:
         self._sla_total = 0
         self._sla_success = 0
         self._sla_latency_sum_ms = 0.0
+        self._decision_thresholds = decision_thresholds or DecisionThresholds.from_env()
+        self._expressive_weight_provider = expressive_weight_provider
 
     def request_interrupt(self, mode: str = InterruptMode.SOFT.value) -> None:
         normalized = str(mode or InterruptMode.SOFT.value).strip().lower()
@@ -200,8 +202,6 @@ class InteractionExecutor:
             "success_rate": round(success_rate, 4),
             "avg_latency_ms": round(avg_latency_ms, 2),
         }
-        self._decision_thresholds = decision_thresholds or DecisionThresholds.from_env()
-        self._expressive_weight_provider = expressive_weight_provider
 
     def can_execute(self, envelope: ActionEnvelope) -> bool:
         for cond in list(envelope.preconditions or []):

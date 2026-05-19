@@ -17,7 +17,7 @@ def test_presence_trace_fields_complete():
 
 def test_dependency_expression_does_not_raise_permission_to_approach():
     eng = _engine()
-    case = json.loads(Path("tests/golden_cases/dependency_expression.json").read_text())
+    case = json.loads(Path("tests/golden_cases/dependency_expression.json").read_text(encoding="utf-8"))
     before = eng.state_authority.state.get("relationship", {}).get("permission_to_approach", 0.5)
     tr = eng._presence_min_flow(user_text=case["input"], assistant_text="我会保持边界。", trace_id="t2", event_id="e2")
     after = eng.state_authority.state.get("relationship", {}).get("permission_to_approach", 0.5)
