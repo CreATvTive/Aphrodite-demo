@@ -13,6 +13,13 @@ from .persona_profiles import PersonaProfile, get_persona_profile, list_persona_
 from .web_search import web_search
 
 
+PROTECTED_PERSONAS: frozenset = frozenset({"aphrodite"})
+
+
+def _is_protected_persona(persona_name: str) -> bool:
+    return str(persona_name or "").strip().lower() in PROTECTED_PERSONAS
+
+
 @dataclass
 class PromptProfile:
     name: str
@@ -103,8 +110,11 @@ class PromptManager:
             if isinstance(obj, dict):
                 for k, v in obj.items():
                     p = self._from_obj(k, v)
-                    if p:
-                        self._profiles[p.name] = p
+                    if not p:
+                        continue
+                    if _is_protected_persona(p.name):
+                        continue
+                    self._profiles[p.name] = p
         except Exception:
             pass
 
@@ -126,6 +136,8 @@ class PromptManager:
     def set(self, name: str, field: str, value: str, source: str = "manual") -> bool:
         k = (name or "").strip().lower()
         if k not in self._profiles:
+            return False
+        if _is_protected_persona(k):
             return False
         f = str(field or "").strip()
         if f not in {"persona", "style", "safety", "response_rules", "prompt_mode", "system_prompt"}:
@@ -159,6 +171,18 @@ class PromptManager:
         p = self.get(persona_name)
         target = str(target_name or "").strip()
         expectation = str(expectation_text or "").strip()
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name):
+            return PromptTuneResult(
+                ok=False,
+                error_code="persona_protected",
+                error_message="aphrodite persona is locked and cannot be cloned",
+                source="clone_preview",
+                persona_name=p.name,
+                target_name=target,
+                expectation=expectation,
+                similarity_mode=str(similarity_mode or "high"),
+                auto_enrich=bool(auto_enrich),
+            )
         if not target:
             return PromptTuneResult(
                 ok=False,
@@ -257,6 +281,8 @@ class PromptManager:
         if not bool(result.ok):
             return None
         p = self.get(persona_name)
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name) or _is_protected_persona(result.persona_name):
+            return None
         if p.name != str(result.persona_name or p.name).strip().lower():
             return None
         after = dict(result.after or {})
@@ -303,6 +329,8 @@ class PromptManager:
 
     def rollback(self, persona_name: str, history_id_or_version: str) -> Optional[PromptProfile]:
         p = self.get(persona_name)
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name):
+            return None
         token = str(history_id_or_version or "").strip()
         if not token:
             return None
@@ -372,6 +400,8 @@ class PromptManager:
         max_chars: int = 220,
     ) -> Optional[PromptProfile]:
         p = self.get(persona_name)
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name):
+            return None
         txt = str(feedback_text or "").strip()
         if not txt:
             return None
@@ -433,6 +463,8 @@ class PromptManager:
         max_chars: int = 260,
     ) -> Optional[Tuple[PromptProfile, str]]:
         p = self.get(persona_name)
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name):
+            return None
         goal = str(goal_text or "").strip()
         traits = str(traits_text or "").strip()
         if not goal or not traits:
@@ -506,6 +538,8 @@ class PromptManager:
         max_chars: int = 260,
     ) -> Optional[Tuple[PromptProfile, str, str]]:
         p = self.get(persona_name)
+        if _is_protected_persona(persona_name) or _is_protected_persona(p.name):
+            return None
         ref = str(reference_text or "").strip()
         goal = str(goal_text or "").strip()
         if not ref:

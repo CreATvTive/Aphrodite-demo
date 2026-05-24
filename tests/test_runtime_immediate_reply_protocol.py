@@ -1,6 +1,29 @@
 from __future__ import annotations
 
+import pytest
+
 from agentlib.runtime_engine import RuntimeEngine
+from agentlib.runtime_immediate_protocol import ImmediateReplyProtocol
+
+
+BANNED_SERVICE_PHRASES = [
+    "我来帮你处理",
+    "我来帮你",
+    "我在这",
+    "继续和你聊",
+    "别担心",
+    "我理解你",
+    "我会陪你",
+]
+
+ROUTE_ACTIONS = [
+    "ASK_CLARIFY",
+    "EXECUTE_LIGHT",
+    "EXECUTE_HEAVY",
+    "TOOL_LIGHT",
+    "CHAT",
+    "",  # falls through to default branch
+]
 
 
 def test_immediate_reply_for_clarify_contains_single_question() -> None:
@@ -48,6 +71,46 @@ def test_execute_event_checks_immediate_reply_order() -> None:
     _ = e._execute_selfdrive_control_dsl({"command": "STATUS_SELFDRIVE", "args": {}}, source_text="status")
     after = int(e.mon.get("immediate_reply_order_violation", 0) or 0)
     assert after == before
+
+
+@pytest.mark.parametrize("action", ROUTE_ACTIONS)
+@pytest.mark.parametrize("user_text", ["你好", "我感觉很难受", "请帮我跑一下脚本", "帮我弄这个"])
+def test_immediate_reply_has_no_service_shaped_phrases(action: str, user_text: str) -> None:
+    proto = ImmediateReplyProtocol()
+    text = proto.compose_immediate_reply(user_text, {"action": action})
+    for phrase in BANNED_SERVICE_PHRASES:
+        assert phrase not in text, (
+            f"banned service-shaped phrase {phrase!r} appeared in immediate reply "
+            f"for action={action!r}, user_text={user_text!r}: {text!r}"
+        )
+
+
+@pytest.mark.parametrize("action", ROUTE_ACTIONS)
+def test_immediate_reply_returns_non_empty_string(action: str) -> None:
+    proto = ImmediateReplyProtocol()
+    text = proto.compose_immediate_reply("hi", {"action": action})
+    assert isinstance(text, str)
+    assert text.strip(), f"empty immediate reply for action={action!r}"
+
+
+def test_immediate_reply_for_execute_is_neutral_ack() -> None:
+    proto = ImmediateReplyProtocol()
+    text = proto.compose_immediate_reply("please run the eval", {"action": "EXECUTE_HEAVY"})
+    assert text == "收到。"
+
+
+def test_immediate_reply_for_chat_is_neutral_ack() -> None:
+    proto = ImmediateReplyProtocol()
+    text = proto.compose_immediate_reply("你好", {"action": "CHAT"})
+    assert text == "嗯。"
+
+
+def test_immediate_reply_for_clarify_uses_neutral_prefix() -> None:
+    proto = ImmediateReplyProtocol()
+    text = proto.compose_immediate_reply("帮我弄这个", {"action": "ASK_CLARIFY"})
+    assert text.startswith("收到。")
+    assert "明白" not in text
+    assert "我来帮你" not in text
 
 
 def test_send_prefers_fastgate_for_chat_route() -> None:

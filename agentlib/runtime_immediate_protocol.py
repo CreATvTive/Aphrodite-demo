@@ -31,10 +31,10 @@ class ImmediateReplyProtocol:
         action = str((route or {}).get("action") or "CHAT").upper()
         if action == "ASK_CLARIFY":
             q = self.single_slot_clarify_question(user_text)
-            return f"明白，我来帮你。{q}"
+            return f"收到。{q}"
         if action in {"EXECUTE_LIGHT", "EXECUTE_HEAVY", "TOOL_LIGHT"}:
-            return "明白，我来帮你处理。"
-        return "收到，我在这，继续和你聊。"
+            return "收到。"
+        return "嗯。"
 
     def send(
         self,

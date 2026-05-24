@@ -58,7 +58,7 @@ except BaseException:
 from .metrics import start_metrics_thread
 from .persona_profiles import get_persona_profile, list_persona_profiles
 from .persona_router import detect_persona_from_text
-from .prompt_manager import PromptManager, PromptTuneResult
+from .prompt_manager import PromptManager, PromptTuneResult, _is_protected_persona
 from .patch_executor import PatchExecutionTransaction
 from .runtime_state import RuntimeConfig, apply_idle_nudge, load_state, mark_user_turn, save_state, update_topic
 from .runtime_immediate_protocol import ImmediateReplyProtocol
@@ -69,7 +69,6 @@ from .style_policy import SelfLearningStylePolicy, infer_reward_from_user_text, 
 from .autonomy.actuation import ActionEnvelope, DialogueExecutor, InteractionExecutor, SceneEffectExecutor
 from .task_run import TaskRun, TaskRunRecorder, TaskRunStep
 from src.interpreter.input_interpreter import InputInterpreter
-from src.interpreter.schema import unknown_output
 from .web_search import web_search
 
 from src.core.state_authority import StateAuthority
@@ -1937,6 +1936,12 @@ class RuntimeEngine:
             style_decision = self.style_policy.act(user_text=user_text, state=self.state, msg_id=msg_id)
             self.mon["policy_action"] = style_decision.action
             style_hint = style_guidance_from_action(style_decision.action)
+            # Protected-persona quarantine: aphrodite never receives per-turn
+            # style guidance ("comfort", "joke", "calm", "ask", "suggest"); the
+            # policy still samples and learns, but no tone hint enters the
+            # live system prompt for the protected persona.
+            if _is_protected_persona(self.persona_name):
+                style_hint = ""
             web_block = self._auto_web_search_block(user_text)
 
             memory_hint = ""

@@ -7,7 +7,7 @@ def test_presence_guard_no_warning_after_normal_emit(monkeypatch):
     eng._emit_presence_reply(
         msg_id="m1",
         user_text="你好",
-        reply_text="收到，我在这，继续和你聊。",
+        reply_text="嗯。",
         idle_tag=False,
         route="immediate_protocol",
         latency_tier="tier_1",

@@ -16,25 +16,30 @@ class PersonaRouteDecision:
     scores: Dict[str, float]
 
 
+AUTO_ROUTE_CANDIDATES: frozenset = frozenset({"coach", "analyst", "codex5.2"})
+
+
 def detect_persona_from_text(user_text: str, state: Dict[str, Any]) -> PersonaRouteDecision:
     t = (user_text or "").strip().lower()
     scores: Dict[str, float] = {
-        "aphrodite": 0.25,
         "coach": 0.25,
         "analyst": 0.25,
         "codex5.2": 0.25,
     }
 
-    # 1) Embedding-first routing
+    # 1) Embedding-first routing — only contributes to auto-route candidates.
     emb_scores = _embedding_scores(t)
     if emb_scores:
         for k, v in emb_scores.items():
+            if k not in AUTO_ROUTE_CANDIDATES:
+                continue
             scores[k] = scores.get(k, 0.0) + float(v) * 0.75
 
-    # 2) Light keyword fallback/boost
+    # 2) Light keyword fallback/boost — aphrodite is NOT an auto-route target.
+    #    Emotional/comfort signals must never auto-select aphrodite; that persona
+    #    is reserved for explicit configuration.
     _apply_keywords(scores, t, "coach", ["plan", "todo", "checklist", "deadline", "execute", "schedule"], 0.10)
     _apply_keywords(scores, t, "analyst", ["tradeoff", "compare", "risk", "assumption", "evidence", "analyze"], 0.10)
-    _apply_keywords(scores, t, "aphrodite", ["anxious", "sad", "stress", "overwhelmed", "lonely", "comfort"], 0.10)
     _apply_keywords(
         scores,
         t,
@@ -43,14 +48,12 @@ def detect_persona_from_text(user_text: str, state: Dict[str, Any]) -> PersonaRo
         0.10,
     )
 
-    # 3) Topic prior
+    # 3) Topic prior — no emotion-topic boost for aphrodite.
     topic = str(state.get("topic") or "").lower()
     if topic in {"planning", "work"}:
         scores["coach"] += 0.08
     if topic in {"tech"}:
         scores["analyst"] += 0.08
-    if topic in {"emotion"}:
-        scores["aphrodite"] += 0.08
     if topic in {"tech"}:
         scores["codex5.2"] += 0.10
 
@@ -127,10 +130,6 @@ def _get_persona_embeddings(model) -> Dict[str, np.ndarray]:
         if _PERSONA_EMBS is not None:
             return _PERSONA_EMBS
         prototypes = {
-            "aphrodite": (
-                "empathetic supportive companion, emotional validation, calm warm tone, "
-                "reduce anxiety and pressure, gentle next step"
-            ),
             "coach": (
                 "execution coach, planning checklist priorities deadlines, concrete action, "
                 "accountability and progress"
@@ -146,15 +145,14 @@ def _get_persona_embeddings(model) -> Dict[str, np.ndarray]:
         }
         try:
             vecs = model.encode(
-                [prototypes["aphrodite"], prototypes["coach"], prototypes["analyst"], prototypes["codex5.2"]],
+                [prototypes["coach"], prototypes["analyst"], prototypes["codex5.2"]],
                 show_progress_bar=False,
                 normalize_embeddings=True,
             )
             _PERSONA_EMBS = {
-                "aphrodite": np.asarray(vecs[0], dtype=np.float32),
-                "coach": np.asarray(vecs[1], dtype=np.float32),
-                "analyst": np.asarray(vecs[2], dtype=np.float32),
-                "codex5.2": np.asarray(vecs[3], dtype=np.float32),
+                "coach": np.asarray(vecs[0], dtype=np.float32),
+                "analyst": np.asarray(vecs[1], dtype=np.float32),
+                "codex5.2": np.asarray(vecs[2], dtype=np.float32),
             }
         except Exception:
             _PERSONA_EMBS = {}
