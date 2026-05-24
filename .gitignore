@@ -59,4 +59,9 @@ report.json
 state.json
 
 rag_offline/eval_report*.json
-rag_offline/tune_report*.json
+rag_offline/tune_report*.json.claude/
+monitor/*.jsonl
+monitor/*.log
+/Aphrodite-demo/
+learned_lists.json
+.claudesettings.local.json
