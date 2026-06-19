@@ -1,3 +1,7 @@
+> **Architecture ownership marker - Standalone Experimental Branch**
+>
+> This directory is an independent emotion-protocol experiment. It is not an authoritative description or implementation path for the current Aphrodite runtime architecture. Preserve it as experimental/reference material unless it is deliberately integrated through the current runtime and authoritative design process.
+
 # 🎭 情感状态协议与实验平台
 
 > Emotion State Protocol & Experiment Platform

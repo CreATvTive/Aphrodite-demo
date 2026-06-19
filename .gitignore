@@ -39,6 +39,8 @@ run_kernel_v16_demo.py
 # IDE / local app config
 .vscode/
 .streamlit/
+.kilo/
+.kilocode/
 
 # Local memory / vector DB artifacts
 memory.faiss
@@ -58,6 +60,8 @@ monitor/*.wav
 q_out.json
 report.json
 state.json
+learned_lists.json
 
 rag_offline/eval_report*.json
 rag_offline/tune_report*.json
+rag_offline/best_rag*.env

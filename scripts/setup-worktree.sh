@@ -47,29 +47,9 @@ echo "🌿 创建分支：${BRANCH_NAME}"
 cd "$PROJECT_DIR"
 git worktree add -b "$BRANCH_NAME" "${TEST_DIR}"
 
-# 4. 复制基础规则文件
-echo "📋 复制基础规则文件..."
-BASE_FILES=(
-    "AGENTS.md"
-    "SOUL.md"
-    "USER.md"
-    "IDENTITY.md"
-    "MEMORY.md"
-    "HEARTBEAT.md"
-    "TOOLS.md"
-)
+# 3. Legacy workspace-continuity files are intentionally not copied into project worktrees.
 
-for file in "${BASE_FILES[@]}"; do
-    if [ -f "${WORKSPACE_ROOT}/${file}" ]; then
-        cp "${WORKSPACE_ROOT}/${file}" "${TEST_DIR}/${file}"
-        echo "   ✓ ${file}"
-    fi
-done
-
-# 创建 memory 目录
-mkdir -p "${TEST_DIR}/memory"
-
-# 5. 生成 mission.md
+# 4. 生成 mission.md
 echo "📝 生成 mission.md..."
 cat > "${TEST_DIR}/mission.md" << EOF
 # Mission - ${PROJECT_NAME}
@@ -101,13 +81,13 @@ $(date '+%Y-%m-%d') - 工作区创建完成
 
 EOF
 
-# 6. 提交初始文件
+# 5. 提交初始文件
 echo "💾 提交初始文件..."
 cd "$TEST_DIR"
 git add -A
 git commit -m "chore: 初始化工作区 - ${PROJECT_NAME}"
 
-# 7. 启动 OpenClaw
+# 6. 启动 OpenClaw
 echo ""
 echo "🎉 工作区创建完成！"
 echo ""

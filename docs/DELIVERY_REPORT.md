@@ -1,5 +1,7 @@
 # 样本个体交付报告 - 丰川祥子
 
+> 文件性质：documentation-only / historical snapshot —— 2026-03-09 针对 BanG Dream! 角色“丰川祥子”的角色-记忆联动测试记录。该测试与 Aphrodite 核心设计目标及当前 runtime 主链路无直接关联，仅作为历史样本保留。
+
 ## 测试概述
 
 **测试时间：** 2026-03-09  
@@ -121,7 +123,6 @@
 | `schemas.py` | `src/memory/schemas.py` | 9.4KB | 数据结构定义 |
 | `store.py` | `src/memory/store.py` | 26.9KB | 记忆存储核心 |
 | `__init__.py` | `src/memory/__init__.py` | 0.6KB | 模块导出 |
-| `test_memory_simple.py` | 根目录 | 8.1KB | 独立测试脚本 |
 | `test_sakiko.sqlite` | `memory/` | 20KB | 测试数据库 |
 
 ### 依赖文件
@@ -201,7 +202,6 @@ store.consolidate(batch_size=10)
 ```bash
 # 复制文件到主机器
 rsync -av Aphrodite-demo/src/memory/ /path/to/main/Aphrodite-demo/src/memory/
-rsync -av Aphrodite-demo/test_memory_simple.py /path/to/main/Aphrodite-demo/
 ```
 
 ### 2. 安装依赖
@@ -214,11 +214,9 @@ pip install numpy faiss-cpu sentence-transformers
 ### 3. 运行测试
 
 ```bash
-# 独立测试（零依赖）
-python3 test_memory_simple.py
-
-# 完整测试（需要依赖）
-python3 test_memory_sakiko.py
+# 旧独立测试脚本 test_memory_simple.py / test_memory_sakiko.py 已删除
+# 当前请运行 pytest tests/ 下的相关测试（例如 tests/test_companion_memory.py，若该文件仍在当前 tests/ 目录中）
+pytest tests/test_companion_memory.py
 ```
 
 ### 4. 集成到现有系统

@@ -1,5 +1,7 @@
 # 角色生成系统 - 环境配置指南
 
+> 文件性质：documentation-only / 历史实现说明 —— 描述 `src/character/` 模块的环境配置与集成示例。该模块在当前 Aphrodite runtime 中不是具身主链路的必经组件；涉及 persona、记忆与 runtime 集成方式时，请以 [`docs/design/README.md`](../../docs/design/README.md) 与当前 runtime anchors 为准。
+
 ## 当前状态
 
 ✅ **代码已完成**：
@@ -65,10 +67,10 @@ EOF
 
 ## 快速测试
 
-### 测试 1：Mock 模式（不需要 API Key）
+### 测试 1：本地生成（不需要 API Key）
 ```bash
 cd /path/to/Aphrodite-demo
-python3 test_character_sakiko.py
+python3 -c "from src.character import generate_character_from_query; print(generate_character_from_query('丰川祥子').to_json())"
 ```
 
 预期输出：丰川祥子的完整角色设定（JSON 格式）
@@ -109,11 +111,10 @@ export DASHSCOPE_API_KEY="your_key"
 ```
 
 ### 步骤 4：测试运行
+
 ```bash
-python3 test_character_sakiko.py  # Mock 测试
 python3 -c "from src.character import generate_character_from_query; print(generate_character_from_query('赫敏·格兰杰').to_json())"  # 真实生成
 ```
-
 ---
 
 ## 集成到现有系统
@@ -212,8 +213,6 @@ src/character/
 ├── SETUP.md              # 环境配置 ✅
 └── tests/
     └── test_generator.py # 单元测试（待完成）
-
-test_character_sakiko.py  # 丰川祥子测试 ✅
 ```
 
 ---

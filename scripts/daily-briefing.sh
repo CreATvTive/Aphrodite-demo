@@ -7,7 +7,6 @@ set -e
 OUTPUT_DIR="${1:-/home/creative/.openclaw/workspace/briefings}"
 WORKSPACE_ROOT="/home/creative/.openclaw/workspace"
 TODAY=$(date '+%Y-%m-%d')
-YESTERDAY=$(date -d 'yesterday' '+%Y-%m-%d')
 
 echo "📰 生成每日简报..."
 echo "   日期：${TODAY}"
@@ -66,18 +65,7 @@ ${COMMITS}
     fi
 done
 
-# 3. 读取 memory 文件
-MEMORY_CONTENT=""
-if [ -f "${WORKSPACE_ROOT}/memory/${TODAY}.md" ]; then
-    MEMORY_CONTENT=$(cat "${WORKSPACE_ROOT}/memory/${TODAY}.md")
-fi
-if [ -f "${WORKSPACE_ROOT}/memory/${YESTERDAY}.md" ]; then
-    MEMORY_CONTENT="${MEMORY_CONTENT}
-
-$(cat "${WORKSPACE_ROOT}/memory/${YESTERDAY}.md")"
-fi
-
-# 4. 替换占位符（新闻部分留给 Agent 填充）
+# 3. 替换占位符（新闻部分留给 Agent 填充）
 sed -i "s/DATE_PLACEHOLDER/${TODAY}/g" "$NEWS_FILE"
 
 echo "✅ 简报框架生成完成：${NEWS_FILE}"

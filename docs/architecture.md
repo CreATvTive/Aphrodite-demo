@@ -1,3 +1,7 @@
+> **Architecture ownership marker - Historical / Non-authoritative**
+>
+> This document is preserved as historical architecture material. It is not authoritative for the current Aphrodite runtime architecture; consult `docs/design/` for explicitly authoritative design guidance and the current runtime anchors for implementation ownership.
+
 # 游戏式 AI 角色世界 - 系统架构
 
 ## 核心理念

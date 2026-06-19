@@ -49,6 +49,9 @@ class CompanionMemoryTests(unittest.TestCase):
             def add_many(self, texts):
                 self.items.extend(texts)
 
+            def retrieve(self, query, k=4):
+                return self.items[-k:]
+
         fake_store = FakeStore()
 
         # patch local import path used in function body

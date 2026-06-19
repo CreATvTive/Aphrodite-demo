@@ -12,7 +12,7 @@ import os
 import sys
 import json
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 WORKSPACE_ROOT = Path("/home/creative/.openclaw/workspace")
@@ -33,19 +33,6 @@ def get_git_commits(repo_path: Path, since: str = "yesterday") -> list:
     except Exception:
         pass
     return []
-
-def get_memory_files() -> str:
-    """读取 memory 文件"""
-    content = []
-    today = datetime.now().strftime("%Y-%m-%d")
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    for date in [today, yesterday]:
-        mem_file = WORKSPACE_ROOT / "memory" / f"{date}.md"
-        if mem_file.exists():
-            content.append(f"## {date}\n\n{mem_file.read_text(encoding='utf-8')}")
-    
-    return "\n\n".join(content) if content else "无记录"
 
 def scan_repos() -> list:
     """扫描所有 git 仓库"""
@@ -98,12 +85,6 @@ def generate_markbriefing_template(news: str, tech: str, work: str) -> str:
 ## 📝 工作记录
 
 {work}
-
----
-
-## 🧠 记忆更新
-
-{get_memory_files()}
 
 ---
 

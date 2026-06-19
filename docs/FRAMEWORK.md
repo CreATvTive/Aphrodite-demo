@@ -1,3 +1,7 @@
+> **Architecture ownership marker - Historical snapshot / Non-authoritative / documentation-only**
+>
+> This document is preserved as historical architecture material. It is not authoritative for the current Aphrodite runtime architecture; consult `docs/design/` for explicitly authoritative design guidance and the current runtime anchors for implementation ownership. The "已完成模块" section reflects an earlier project phase; `src/character/` and related features may no longer match the current runtime priority.
+
 # 游戏式 AI 角色世界 - 项目框架
 
 ## 项目愿景
@@ -269,7 +273,6 @@ Aphrodite-demo/
 ├── agentlib/             # 现有对话引擎
 ├── agent_kernel/         # Agent 内核
 ├── docs/                 # 文档
-├── test_character_sakiko.py  # 角色测试 ✅
 └── FRAMEWORK.md          # 本文件
 ```
 
@@ -345,7 +348,7 @@ export DASHSCOPE_API_KEY="your_key"
 
 ```bash
 cd /path/to/Aphrodite-demo
-python3 test_character_sakiko.py
+python3 -c "from src.character import generate_character_from_query; print(generate_character_from_query('丰川祥子').to_json())"
 ```
 
 ### 3. 配置 GPT-SoVITS
