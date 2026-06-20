@@ -6,9 +6,7 @@
 agentlib/** @your-org/maintainers-agentlib
 agent_kernel/** @your-org/maintainers-kernel
 src/semantic_trigger/** @your-org/maintainers-semantic
-src/character/** @your-org/maintainers-character
 src/memory/** @your-org/maintainers-memory
-src/voice/** @your-org/maintainers-voice
 cli/** @your-org/maintainers-cli
 tests/** @your-org/maintainers-tests
 

@@ -11,15 +11,9 @@ modules:
   semantic-trigger:
     paths:
       - "src/semantic_trigger/**"
-  character:
-    paths:
-      - "src/character/**"
   memory:
     paths:
       - "src/memory/**"
-  voice:
-    paths:
-      - "src/voice/**"
   cli:
     paths:
       - "cli/**"

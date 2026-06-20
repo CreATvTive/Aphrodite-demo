@@ -6,7 +6,9 @@ from .interaction_executor import (
     DecisionFeedback,
     DecisionSummary,
     DecisionThresholds,
+    FailureClass,
     InteractionExecutor,
+    InterruptMode,
     TurnDecisionReport,
 )
 from .scene_effect_executor import SceneEffectExecutor
@@ -18,7 +20,9 @@ __all__ = [
     "DecisionFeedback",
     "DecisionSummary",
     "DecisionThresholds",
+    "FailureClass",
     "InteractionExecutor",
+    "InterruptMode",
     "TurnDecisionReport",
     "DialogueExecutor",
     "SceneEffectExecutor",

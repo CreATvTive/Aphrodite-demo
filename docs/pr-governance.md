@@ -25,6 +25,8 @@
 - `cli` → `cli/**`
 - `tests` → `tests/**`
 
+> 注：`character` 与 `voice` 模块声明（`src/character/`、`src/voice/`）对应路径已在阶段 3 移除，当前白名单保留条目仅用于配置兼容性，后续需由 governance 配置任务清理 `.github/module-whitelist.yml` 与 `.github/CODEOWNERS`。本步骤不修改配置文件。
+
 ## 2. 权限级别（Owner / Maintainer / Contributor）
 
 先从路径级治理，不做复杂 RBAC：

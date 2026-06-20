@@ -1,5 +1,7 @@
 # 记忆系统融合方案
 
+> 文件性质：documentation-only / historical snapshot —— 记录早期桌面原型记忆系统向 `src/memory/` 迁移的融合思路。其中提到的 `src/character/` 等路径及模块归属可能与当前 runtime 不一致；当前实现与权威设计请参见 `docs/design/README.md`、`AGENTS.md` 与当前 runtime anchors。
+
 ## 现状分析
 
 ### 桌面原型 (`A0.32026205.01(暂停）.py`)

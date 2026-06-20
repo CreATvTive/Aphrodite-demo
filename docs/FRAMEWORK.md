@@ -45,6 +45,8 @@
 
 ## 已完成模块
 
+> 以下“已完成模块”描述的是历史阶段（阶段 3 之前）的 `src/character/`、`src/voice/` 路径，这些路径已在阶段 3 移除；当前 runtime 以 `docs/design/README.md` 与 `AGENTS.md` 锚点为准。
+
 ### 1. 角色生成系统 (`src/character/`)
 
 **功能：** 从用户简短描述生成完整角色设定
