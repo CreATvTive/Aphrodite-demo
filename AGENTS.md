@@ -1,22 +1,30 @@
-# AGENTS.md - Aphrodite Project Workspace
+# AGENTS.md — Aphrodite chatbox v0
 
-## Current Scope
+Status: CURRENT PROJECT RULE
+Authority-Scope: All repository work
+Supersedes: Previous workspace runtime-anchor guidance
+Superseded-By: —
+Last-Verified: 2026-07-14
 
-This repository is the Aphrodite project workspace. Determine current context from the task, current runtime code, tests, and explicitly authoritative design documentation.
+## Current mainline
 
-- Consult `docs/design/README.md` before work that affects Aphrodite design continuity or persona boundaries.
-- Treat `agentlib/runtime_engine.py`, `agent_kernel/`, `agentlib/autonomy/`, `agentlib/companion_rag.py`, `src/interpreter/`, `src/core/`, `src/memory/`, `src/relationship/`, and `src/body/` as current runtime anchors unless repository evidence indicates otherwise.
-- Treat `monitor/` persona or runtime-state data as sensitive; do not modify it unless the task explicitly requires it.
+- Read [`docs/chatbox/phase-plan-v0.md`](docs/chatbox/phase-plan-v0.md) first. It is authoritative for chatbox v0 scope, architecture, contracts, P1–P4 gates, and acceptance.
+- Use [`docs/design/README.md`](docs/design/README.md) only for identity, persona, relationship posture, expression tendency, and anti-drift boundaries.
+- The new implementation entry is `app/chatbox/`; its absence or incompleteness means "not implemented yet", not permission to reactivate an older runtime.
 
-## Archived Continuity Material
+## Quarantine and authority
 
-Legacy assistant workspace-continuity material is preserved under `docs/archive/legacy-continuity/`.
+- `app/chatbox/` may depend only on `src/core/`, evaluated portions of `src/relationship/`, standard persistence facilities, and `config/`, as frozen by the Phase plan.
+- `agentlib/`, `agent_kernel/`, `src/semantic_trigger/`, and `demos/scenarios/` are quarantined from chatbox v0. Do not import, adapt, or use their metrics as v0 authority.
+- [`docs/archive/README.md`](docs/archive/README.md) indexes historical material. Archive content and [`docs/archive/legacy-continuity/`](docs/archive/legacy-continuity/) never define current runtime or persona.
 
-- Do not treat archived `USER.md`, `MEMORY.md`, `SOUL.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, or dated memory notes as required current project context.
-- Do not load archived continuity material into runtime/persona decisions unless the user explicitly asks for historical review.
+## Universal prohibitions
 
-## Working Rules
+- Do not change frozen Phase decisions, acceptance gates, or contracts through implementation or documentation drift.
+- Do not make writer code write state directly; writer may move attractor only.
+- Do not hard-code the dimension count, add hard clamp behavior, or replace emergent `P_talk` with scheduled proactive messages.
+- Do not present Aphrodite as a generic agent, assistant, NPC, emotion-label engine, companion product, or productivity tool.
 
-- Preserve current runtime behavior unless the task calls for implementation changes.
-- Preserve authoritative design materials; archive or mark non-mainline material before considering deletion.
-- Do not expose private data or move sensitive data into public-facing artifacts without explicit direction.
+## Review gate
+
+Every review must check: changes under `tests/`; imports beyond the quarantine whitelist; any writer path that writes state directly; and any modification or weakening of frozen acceptance contracts. Detailed governance: [`docs/governance/pr-governance.md`](docs/governance/pr-governance.md).

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional
 
+from ._utils import _dedup_keep_order_values
 from .glm_client import GLMClient
 from .companion_prompt import build_system_prompt_sections, render_system_prompt
 from .companion_rag import build_rag_context, build_rag_package, render_rag_block
@@ -225,10 +226,4 @@ def companion_reply(
 
 
 def _dedup_keep_order(items: List[str]) -> List[str]:
-    seen = set()
-    out: List[str] = []
-    for x in items:
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
-    return out
+    return _dedup_keep_order_values(items)

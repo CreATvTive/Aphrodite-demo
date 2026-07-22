@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Aphrodite · 对话与场轨迹</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><circle cx=%2232%22 cy=%2232%22 r=%2227%22 fill=%22%23ec8cae%22/><path d=%22M17 37c7-18 13 9 30-10%22 fill=%22none%22 stroke=%22%230b1018%22 stroke-width=%226%22 stroke-linecap=%22round%22/></svg>">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#dialogue">跳到对话</a>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">APHRODITE / LOCAL CHATBOX · P1 FIELD OBSERVATORY</p>
+        <h1>在这里说话</h1>
+        <p class="subtitle">对话与场轨迹并行运行；回复的变化会在下方只读视图中留下可观察痕迹</p>
+      </div>
+      <div class="connection-panel" aria-live="polite" aria-atomic="true">
+        <div><span id="connection-status" class="status-pill" data-state="initial">尚未连接</span><span id="freshness-status" class="freshness-pill" data-stale="true">数据陈旧 / 不代表场冻结</span></div>
+        <p id="connection-detail">准备连接本地运行时</p>
+        <button id="retry-now" type="button">立即重连</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="dialogue" class="dialogue-panel" aria-labelledby="dialogue-title">
+        <div class="dialogue-heading">
+          <div>
+            <p class="eyebrow">DIALOGUE</p>
+            <h2 id="dialogue-title">与 Aphrodite 对话</h2>
+          </div>
+          <div class="dialogue-connection" aria-live="polite" aria-atomic="true">
+            <span id="dialogue-status" class="status-pill" data-state="initial">正在连接</span>
+            <button id="dialogue-retry" type="button">重新连接</button>
+          </div>
+        </div>
+        <p id="dialogue-empty" class="dialogue-empty">可以从此刻真正想说的那句话开始。</p>
+        <div id="message-history" class="message-history" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话历史" tabindex="0"></div>
+        <form id="dialogue-form" class="dialogue-form">
+          <label for="dialogue-input">你的话</label>
+          <textarea id="dialogue-input" name="message" rows="3" maxlength="4000" placeholder="写下想说的话…" autocomplete="off"></textarea>
+          <div class="composer-footer">
+            <p><span id="dialogue-count">0</span> / <span id="dialogue-limit">4000</span> · Enter 发送，Shift+Enter 换行</p>
+            <div>
+              <button id="dialogue-cancel" type="button" hidden>停止等待</button>
+              <button id="dialogue-send" class="primary-action" type="submit" disabled>发送</button>
+            </div>
+          </div>
+        </form>
+        <p id="dialogue-live-status" class="sr-only" aria-live="assertive"></p>
+      </section>
+
+      <section class="metrics" aria-label="轨迹摘要">
+        <article><span>缓冲样本</span><strong id="sample-count">0</strong><small>上限 7,200 帧</small></article>
+        <article><span>观察跨度</span><strong id="observed-duration">0 秒</strong><small>图表窗口 60 分钟</small></article>
+        <article><span>最新游标 / tick</span><strong><span id="latest-cursor">—</span> / <span id="latest-tick">—</span></strong><small>游标允许事件空洞</small></article>
+        <article><span>运行衔接</span><strong id="boot-transitions">0</strong><small>当前 <span id="boot-id">—</span></small></article>
+      </section>
+
+      <p id="history-notice" class="notice" hidden>服务端只返回了尾部历史；更早轨迹未进入本页缓冲。</p>
+
+      <div class="dashboard-layout">
+        <aside class="gate-panel" aria-labelledby="gate-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">EXPRESSION GATE</p><h2 id="gate-title">门控权重</h2></div>
+            <span class="live-dot" aria-hidden="true"></span>
+          </div>
+          <p id="gate-metadata" class="metadata">等待注册表</p>
+          <ul id="gate-list" class="gate-list"></ul>
+          <div class="legend-block">
+            <h3>曲线图例</h3>
+            <p><span class="legend-line state"></span>状态值</p>
+            <p><span class="legend-line attractor"></span>吸引子</p>
+            <p><span class="legend-line baseline"></span>慢基线</p>
+          </div>
+          <p class="protocol-label">协议 <code id="protocol-version"></code></p>
+        </aside>
+
+        <section id="trajectory" class="trajectory-panel" aria-labelledby="trajectory-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">TRAILING 60 MINUTES</p><h2 id="trajectory-title">全维轨迹</h2></div>
+            <p>断线区间留白；不会伪装成场冻结</p>
+          </div>
+          <div id="trajectory-grid" class="trajectory-grid" data-testid="trajectory-grid" aria-live="off"></div>
+        </section>
+      </div>
+    </main>
+
+    <noscript>此页面需要 JavaScript 以消费本地 WebSocket 轨迹协议。</noscript>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

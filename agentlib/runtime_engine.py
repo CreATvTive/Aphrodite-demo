@@ -40,6 +40,7 @@ from agent_kernel.schemas import ExecutableSubgoal, Predicate, RetryPolicy, Subg
 from agent_kernel.schemas import Task as KernelTask
 from agent_kernel.worker import SpecialistRouterWorker
 
+from ._utils import _dedup_keep_order_stripped_nonempty
 from .advanced_decision import AdvancedDecisionConfig, generate_reply, load_advanced_decision_config
 from .autodebug import auto_debug_python_file, selfcheck_python_target
 from .chat_bridge import ChatBridge, db_set_inbox_status, db_write_outbox, db_write_system_pair
@@ -820,15 +821,7 @@ class RuntimeEngine:
 
     @staticmethod
     def _dedup_keep_order(items: List[str]) -> List[str]:
-        seen = set()
-        out: List[str] = []
-        for x in items:
-            k = str(x).strip()
-            if not k or k in seen:
-                continue
-            seen.add(k)
-            out.append(k)
-        return out
+        return _dedup_keep_order_stripped_nonempty(items)
 
     @staticmethod
     def _parse_safe_edit_patterns(raw: str) -> List[str]:

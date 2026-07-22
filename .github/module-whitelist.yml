@@ -2,6 +2,21 @@
 # 注意：将 owner/maintainer/contributor 与 CODEOWNERS、分支保护规则联动。
 
 modules:
+  # Chatbox v0 当前主线
+  chatbox:
+    paths:
+      - "app/chatbox/**"
+  chatbox-docs:
+    paths:
+      - "docs/chatbox/**"
+  chatbox-contracts:
+    paths:
+      - "docs/chatbox/contracts/**"
+  tests:
+    paths:
+      - "tests/**"
+
+  # Legacy/non-default：保留供独立维护，不作为 chatbox v0 默认入口或依赖
   agentlib:
     paths:
       - "agentlib/**"
@@ -17,21 +32,29 @@ modules:
   cli:
     paths:
       - "cli/**"
-  tests:
-    paths:
-      - "tests/**"
 
 global_allowlist:
   # 文档与治理配置允许跨模块修改
-  - "docs/**"
+  # 冻结合同/高风险路径（docs/chatbox/**、docs/design/aphrodite_private_origin_design_source.md、
+  # docs/governance/pr-governance.md）不在此列，须通过对应模块声明或 Owner 审批。
+  - "docs/README.md"
+  - "docs/archive/**"
+  - "docs/design/README.md"
+  - "docs/design/visual-direction.md"
   - ".github/**"
   - "README.md"
   - "FRAMEWORK.md"
   - "DELIVERY_REPORT.md"
   - "requirements.txt"
 
-# 高风险路径：需要 Owner 审批（见 docs/pr-governance.md）
+# 高风险路径：需要 Owner 审批（见 docs/governance/pr-governance.md）
 high_risk_paths:
+  - "app/chatbox/**"
+  - "docs/chatbox/phase-plan-v0.md"
+  - "docs/chatbox/contracts/**"
+  - "docs/design/aphrodite_private_origin_design_source.md"
+  - "docs/governance/pr-governance.md"
+  - "AGENTS.md"
   - "agent_kernel/**"
   - "agentlib/runtime_engine.py"
   - "agentlib/patch_executor.py"

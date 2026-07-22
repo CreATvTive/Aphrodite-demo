@@ -1,0 +1,23 @@
+# Chatbox v0 provider configuration (P2 task card 4).
+#
+# One line switches the provider: set `provider` to `deepseek` or `kimi`.
+# The default follows the Phase decision (DeepSeek V4 Pro).  Credentials are
+# never stored here; they are read from environment variables only
+# (see `.env.example`).
+#
+# This file is documentation/defaults for the provider-switch layer.  The
+# runtime resolves the active provider from environment variables first
+# (CHATBOX_PROVIDER) and falls back to the `provider` key here.
+
+provider: deepseek
+
+# Optional API model identifier override.  When null, the profile default is
+# used (deepseek-chat / moonshot-v1-8k).  This only changes the model string
+# sent to the provider; it does not change the profile id or display label.
+model: null
+
+# Per-call knobs.  v0 structure-A does not use tools or reasoning parameters.
+timeout_sec: 60
+max_retries: 0
+max_tokens: null
+temperature: null

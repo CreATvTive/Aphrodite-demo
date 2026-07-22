@@ -1,6 +1,7 @@
-# Legacy Workspace Continuity Archive
+# Legacy workspace continuity archive
 
-This directory preserves assistant workspace-continuity material from a non-current project workflow.
+Status: ARCHIVED HISTORY / NO AUTHORITY
 
-These files are retained for history only. They are not required inputs for the current Aphrodite runtime, tests, or project-agent startup context.
+This directory preserves assistant workspace-continuity material from a non-current workflow. Every file here, including `USER.md`, `MEMORY.md`, `SOUL.md`, `IDENTITY.md`, `HEARTBEAT.md`, `TOOLS.md`, legacy agent rules, and dated memory notes, is historical only.
 
+Do not load, summarize, adapt, or cite this material as current Aphrodite identity, persona, memory, relationship posture, runtime state, prompt context, or project-agent startup context. It cannot override [`../../chatbox/phase-plan-v0.md`](../../chatbox/phase-plan-v0.md), [`../../design/README.md`](../../design/README.md), or [`../../../AGENTS.md`](../../../AGENTS.md).

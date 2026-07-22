@@ -1,7 +1,13 @@
 # Aphrodite v2 — Private Origin & Design Source
 
+Status: CURRENT AUTHORITATIVE DESIGN SOURCE
+Authority-Scope: Identity, persona, relationship posture, expression tendency, anti-drift
+Supersedes: —
+Superseded-By: —
+Last-Verified: 2026-07-14
+
 版本：v0.2 revised
-定位：最高层私人来源 / 设计宪法 / 工程误读防护文件
+定位：私人来源 / 身份与反漂移边界文件；不规定 chatbox v0 工程架构
 
 ## 0. 本节定位
 

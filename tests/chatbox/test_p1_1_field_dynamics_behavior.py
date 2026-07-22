@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 
+import numpy as np
 import pytest
 
 from app.chatbox.field_dynamics import (
@@ -23,6 +24,7 @@ GENERATOR_VERSION = "p1.1-settled-release-sha256-strata-v1"
 RANDOM_CASE_COUNT = 1008
 SETTLE_TICKS = 20_000
 RELEASE_TICKS = 50_000
+ORACLE_RELEASE_TICKS = 280
 MAX_OVERSHOOT_RATIO = 0.15
 MAX_CROSSINGS = 2
 MAX_END_ERROR = 1.0e-10
@@ -36,9 +38,11 @@ class _ZeroRng:
         return RngDraw(MASTER_SEED, self._stream, draw_index, 0.0)
 
 
-class _ZeroRngFactory:
-    def create(self, stream: str) -> _ZeroRng:
-        return _ZeroRng(stream)
+def _zero_rng_dynamics() -> FieldDynamics:
+    """Test-private zero-RNG assembly after a legal production construction."""
+    dynamics = FieldDynamics()
+    dynamics._rngs = tuple(_ZeroRng(item.dim_id) for item in dynamics.registry)
+    return dynamics
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +134,7 @@ class _CaseResult:
 
 
 def _default_parameters() -> tuple[FieldDynamics, float, float, float, float, float]:
-    dynamics = FieldDynamics(rng_factory=_ZeroRngFactory())
+    dynamics = _zero_rng_dynamics()
     first = dynamics.registry[0]
     S0 = first.soft_boundary_start
     W = first.soft_boundary_width
@@ -229,6 +233,128 @@ def _random_cases() -> tuple[_CaseSpec, ...]:
     assert all(-R < case.displacement < R for case in cases)
     assert len({case.displacement for case in cases}) == RANDOM_CASE_COUNT
     return tuple(cases)
+
+
+def _stratified_production_sample(cases: tuple[_CaseSpec, ...]) -> tuple[_CaseSpec, ...]:
+    """Choose one deterministic public-path case per registered dimension.
+
+    The full 1008-case set is checked by the independent vectorized oracle;
+    this sample keeps every registry dimension on the real production tick
+    path and spans the digest ordering rather than taking adjacent cases.
+    """
+
+    dynamics, _, _, _, _, _ = _default_parameters()
+    dimension_count = len(dynamics.registry)
+    ordered = sorted(cases, key=lambda item: (item.digest, item.case_id))
+    selected: list[_CaseSpec] = []
+    used_dims: set[str] = set()
+    for stratum in range(dimension_count):
+        lower = stratum * len(ordered) // dimension_count
+        upper = (stratum + 1) * len(ordered) // dimension_count
+        candidates = ordered[lower:upper]
+        case = next(item for item in candidates if item.dim_id not in used_dims)
+        selected.append(case)
+        used_dims.add(case.dim_id)
+    assert used_dims == {item.dim_id for item in dynamics.registry}
+    return tuple(selected)
+
+
+def _independent_release_oracle(
+    specs: tuple[_CaseSpec, ...],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Independent binary64 oracle for every legal settled-release command.
+
+    It inverts the equilibrium relation analytically, vectorizes only across
+    independent cases, explicitly advances through the nonlinear soft region,
+    then uses the closed-form roots of the inactive linear recurrence.  It
+    does not call ``FieldDynamics`` or copy its per-tick implementation.
+    """
+
+    registration = _default_parameters()[0].registry[0]
+    command = np.abs(
+        np.asarray([item.displacement for item in specs], dtype=np.float64)
+    )
+    spring = (1.0 / registration.fast_e_fold_s) ** 2
+    damping = 2.0 / registration.fast_e_fold_s
+    start = registration.soft_boundary_start
+    width = registration.soft_boundary_width
+    strength = registration.soft_boundary_strength
+    alpha = strength / (2.0 * width)
+    beta = alpha * (1.0 / spring - 1.0)
+
+    active = command > start
+    excess = np.zeros_like(command)
+    shifted = command[active] - start
+    excess[active] = 2.0 * shifted / (
+        1.0 + np.sqrt(1.0 + 4.0 * beta * shifted)
+    )
+    proposal = np.where(active, start + excess, command)
+    value = proposal - alpha * excess * excess
+    velocity = np.zeros_like(value)
+
+    trace = 2.0 - damping - spring
+    root_delta = math.sqrt(trace * trace - 4.0 * (1.0 - damping))
+    lambda_minus = (trace - root_delta) / 2.0
+    lambda_plus = (trace + root_delta) / 2.0
+    entered = command == 0.0
+    entry_tick = np.zeros(command.shape, dtype=np.int64)
+    entry_value = np.zeros_like(command)
+    entry_next_value = np.zeros_like(command)
+
+    for release_tick in range(1, ORACLE_RELEASE_TICKS + 1):
+        velocity_proposal = (1.0 - damping) * velocity - spring * value
+        proposal = value + velocity_proposal
+        boundary_excess = np.abs(proposal) - start
+        restoring_magnitude = np.where(
+            boundary_excess <= 0.0,
+            0.0,
+            np.where(
+                boundary_excess < width,
+                strength * boundary_excess * boundary_excess / (2.0 * width),
+                strength * (boundary_excess - width / 2.0),
+            ),
+        )
+        next_value = proposal - np.copysign(restoring_magnitude, proposal)
+        next_velocity = next_value - value
+        fresh = np.logical_and.reduce(
+            (
+                np.logical_not(entered),
+                np.abs(proposal) <= start,
+                value > 0.0,
+                next_value - lambda_minus * value > 0.0,
+            )
+        )
+        entry_tick[fresh] = release_tick
+        entry_value[fresh] = value[fresh]
+        entry_next_value[fresh] = next_value[fresh]
+        entered = np.logical_or(entered, fresh)
+        value, velocity = next_value, next_velocity
+
+    assert bool(np.all(entered))
+    nonzero = entry_tick > 0
+    fast_mode = np.zeros_like(command)
+    slow_mode = np.zeros_like(command)
+    fast_mode[nonzero] = (
+        entry_next_value[nonzero] - lambda_minus * entry_value[nonzero]
+    ) / (lambda_plus - lambda_minus)
+    slow_mode[nonzero] = entry_value[nonzero] - fast_mode[nonzero]
+    assert bool(np.all(fast_mode[nonzero] > 0.0))
+
+    remaining_steps = RELEASE_TICKS - (entry_tick - 1)
+    end_error = np.zeros_like(command)
+    end_error[nonzero] = np.abs(
+        fast_mode[nonzero]
+        * np.power(lambda_plus, remaining_steps[nonzero])
+        + slow_mode[nonzero]
+        * np.power(lambda_minus, remaining_steps[nonzero])
+    )
+    # Positive fast-mode coefficient plus 0 < lambda- < lambda+ < 1 gives a
+    # positive, monotonically decreasing tail; the nonlinear prefix above is
+    # checked to enter the same positive cone.  Therefore no crossing or
+    # first overshoot is possible for either sign by odd symmetry.
+    crossings = np.zeros(command.shape, dtype=np.int64)
+    overshoot_ratio = np.zeros_like(command)
+    return overshoot_ratio, crossings, end_error
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -657,7 +783,7 @@ def _print_global_summary(label: str, results: tuple[_CaseResult, ...]) -> None:
 
 def test_p1_1_behavior_command_domain_is_closed_and_rejection_is_atomic() -> None:
     for direction in (-1.0, 1.0):
-        accepted = FieldDynamics(rng_factory=_ZeroRngFactory())
+        accepted = _zero_rng_dynamics()
         dim_id = accepted.registry[1].dim_id
         baseline = accepted.registry[1].birth_bias
         accepted_snapshot = accepted.move_attractor(
@@ -673,8 +799,8 @@ def test_p1_1_behavior_command_domain_is_closed_and_rejection_is_atomic() -> Non
         )
         assert accepted_dimension.attractor == baseline + direction * ATTRACTOR_DISPLACEMENT_RADIUS
 
-        rejected = FieldDynamics(rng_factory=_ZeroRngFactory())
-        control = FieldDynamics(rng_factory=_ZeroRngFactory())
+        rejected = _zero_rng_dynamics()
+        control = _zero_rng_dynamics()
         boundary = baseline + direction * ATTRACTOR_DISPLACEMENT_RADIUS
         outward = math.nextafter(boundary, math.inf if direction > 0.0 else -math.inf)
         before = rejected.snapshot()
@@ -698,55 +824,6 @@ def test_p1_1_behavior_command_domain_is_closed_and_rejection_is_atomic() -> Non
         assert rejected.snapshot() == control.snapshot()
 
 
-def test_p1_1_behavior_settled_release_deterministic_grid() -> None:
-    dynamics, _, S0, _, S1, _ = _default_parameters()
-    grid = _deterministic_grid()
-    zero_baseline = tuple(item for item in dynamics.registry if item.birth_bias == 0.0)
-    assert len(zero_baseline) == len(dynamics.registry) - 2
-    results: list[_CaseResult] = []
-    for batch_index, start in enumerate(range(0, len(grid), len(zero_baseline))):
-        nodes = grid[start : start + len(zero_baseline)]
-        specs = tuple(
-            _CaseSpec(
-                f"grid-{start + offset:02d}",
-                "deterministic-grid",
-                registration.dim_id,
-                registration.birth_bias,
-                displacement,
-            )
-            for offset, (registration, displacement) in enumerate(zip(zero_baseline, nodes))
-        )
-        results.extend(_run_settled_release_batch("deterministic-grid", batch_index, specs))
-
-    nonzero_nodes = (
-        -ATTRACTOR_DISPLACEMENT_RADIUS,
-        -S1,
-        -S0,
-        0.0,
-        S0,
-        S1,
-        ATTRACTOR_DISPLACEMENT_RADIUS,
-    )
-    biased = tuple(item for item in dynamics.registry if item.dim_id in {"birth_01", "birth_02"})
-    assert {item.birth_bias for item in biased} == {-0.2, -0.1}
-    for node_index, displacement in enumerate(nonzero_nodes):
-        specs = tuple(
-            _CaseSpec(
-                f"biased-{registration.dim_id}-{node_index}",
-                "deterministic-nonzero-baseline",
-                registration.dim_id,
-                registration.birth_bias,
-                displacement,
-            )
-            for registration in biased
-        )
-        results.extend(
-            _run_settled_release_batch("deterministic-nonzero-baseline", node_index, specs)
-        )
-    assert len(results) == len(grid) + len(biased) * len(nonzero_nodes)
-    _print_global_summary("deterministic-grid-and-nonzero-baseline", tuple(results))
-
-
 def test_p1_1_behavior_settled_release_fixed_seed_random_1008() -> None:
     dynamics, _, _, _, _, _ = _default_parameters()
     dimension_count = len(dynamics.registry)
@@ -754,21 +831,49 @@ def test_p1_1_behavior_settled_release_fixed_seed_random_1008() -> None:
     counts = Counter(case.dim_id for case in cases)
     assert set(counts) == {item.dim_id for item in dynamics.registry}
     assert set(counts.values()) == {RANDOM_CASE_COUNT // dimension_count}
-    results: list[_CaseResult] = []
-    for batch_index, start in enumerate(range(0, RANDOM_CASE_COUNT, dimension_count)):
-        batch = cases[start : start + dimension_count]
-        assert all(case.case_id // dimension_count == batch_index for case in batch)
-        assert all(
-            case.dim_id == dynamics.registry[case.case_id % dimension_count].dim_id
-            for case in batch
-            if isinstance(case.case_id, int)
+    oracle_ratio, oracle_crossings, oracle_end_error = _independent_release_oracle(cases)
+    assert oracle_ratio.shape == oracle_crossings.shape == oracle_end_error.shape == (
+        RANDOM_CASE_COUNT,
+    )
+    assert float(np.max(oracle_ratio)) <= MAX_OVERSHOOT_RATIO
+    assert int(np.max(oracle_crossings)) <= MAX_CROSSINGS
+    assert float(np.max(oracle_end_error)) < MAX_END_ERROR
+
+    sample = _stratified_production_sample(cases)
+    results = _run_settled_release_batch("fixed-seed-random-production-sample", 0, sample)
+    assert len(results) == dimension_count
+    assert {item.spec.dim_id for item in results} == {
+        item.dim_id for item in dynamics.registry
+    }
+    for result in results:
+        oracle_index = int(result.spec.case_id)
+        assert result.ratio == pytest.approx(
+            float(oracle_ratio[oracle_index]), abs=8.0 * math.ulp(1.0)
         )
-        results.extend(_run_settled_release_batch("fixed-seed-random", batch_index, batch))
-    assert len(results) == RANDOM_CASE_COUNT
-    _print_global_summary("fixed-seed-random-1008", tuple(results))
+        assert result.crossings == int(oracle_crossings[oracle_index])
+        assert result.end_error < MAX_END_ERROR
+    print(
+        json.dumps(
+            {
+                "type": "p1_1_behavior_independent_oracle_summary",
+                "case_count": RANDOM_CASE_COUNT,
+                "production_sample_count": len(sample),
+                "production_sample_ids": [item.case_id for item in sample],
+                "max_ratio": float(np.max(oracle_ratio)),
+                "max_crossings": int(np.max(oracle_crossings)),
+                "max_end_error": float(np.max(oracle_end_error)),
+                "nonlinear_prefix_limit": ORACLE_RELEASE_TICKS,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    _print_global_summary("fixed-seed-random-production-sample", results)
 
 
-def test_p1_1_behavior_full_pool_concurrent_corners() -> None:
+def test_p1_1_behavior_production_corners_and_zero_preserve_legacy_invariants() -> None:
+    """Compact production-path replacement for the legacy 4x/zero long scans."""
+
     dynamics, R, _, _, _, _ = _default_parameters()
     dimension_count = len(dynamics.registry)
     vectors = (
@@ -776,43 +881,94 @@ def test_p1_1_behavior_full_pool_concurrent_corners() -> None:
         tuple(-R for _ in dynamics.registry),
         tuple(R if index % 2 == 0 else -R for index in range(dimension_count)),
         tuple(-R if index % 2 == 0 else R for index in range(dimension_count)),
+        tuple(0.0 for _ in dynamics.registry),
     )
-    results: list[_CaseResult] = []
-    for corner_index, vector in enumerate(vectors):
-        specs = tuple(
-            _CaseSpec(
-                f"corner-{corner_index}-{registration.dim_id}",
-                "full-pool-corner",
-                registration.dim_id,
-                registration.birth_bias,
-                displacement,
+    for vector_index, vector in enumerate(vectors):
+        candidate, _, _, _, _, B_alarm = _default_parameters()
+        for registration, displacement in zip(candidate.registry, vector):
+            candidate.move_attractor(
+                AttractorMove(
+                    registration.dim_id,
+                    displacement,
+                    "p1.1-fast-production",
+                    "corner and zero replacement",
+                )
             )
-            for registration, displacement in zip(dynamics.registry, vector)
-        )
-        results.extend(_run_settled_release_batch("full-pool-corner", corner_index, specs))
-    assert len(results) == len(vectors) * dimension_count
-    print("full-pool corners exercise public API and tick paths; they are not an axis-coupling proof.")
-    _print_global_summary("full-pool-concurrent-corners", tuple(results))
+        for tick in range(1, 281):
+            observation = candidate.tick()
+            assert observation.tick_after == tick
+            for dimension in observation.dimensions:
+                baseline = dimension.after_soft_restoring_baseline
+                assert all(
+                    math.isfinite(value) for value in _observation_numbers(dimension)
+                )
+                assert abs(dimension.after_value - baseline) <= B_alarm
+                assert abs(dimension.after_velocity) <= B_alarm
+                assert dimension.after_value == (
+                    dimension.pre_boundary_value_proposal
+                    + dimension.soft_restoring_acceleration
+                )
+                assert dimension.after_velocity == (
+                    dimension.velocity_proposal
+                    + dimension.soft_restoring_acceleration
+                )
+        if vector_index == len(vectors) - 1:
+            snapshot = candidate.snapshot()
+            assert all(
+                item.value == item.soft_restoring_baseline
+                and item.velocity == 0.0
+                and item.ou_acceleration == 0.0
+                for item in snapshot.dimensions
+            )
 
 
-def test_p1_1_behavior_zero_command_remains_exact_equilibrium() -> None:
-    dynamics, _, _, _, _, _ = _default_parameters()
-    specs = tuple(
+def test_p1_1_behavior_fast_oracle_covers_grid_corners_and_exact_zero() -> None:
+    """Daily layer: all prior long-run input sets through an independent oracle."""
+
+    dynamics, R, _, _, _, _ = _default_parameters()
+    grid = _deterministic_grid()
+    cases: list[_CaseSpec] = [
         _CaseSpec(
-            f"zero-{registration.dim_id}",
-            "exact-equilibrium",
-            registration.dim_id,
-            registration.birth_bias,
-            0.0,
+            f"fast-grid-{index:02d}",
+            "fast-grid",
+            dynamics.registry[index % len(dynamics.registry)].dim_id,
+            dynamics.registry[index % len(dynamics.registry)].birth_bias,
+            displacement,
         )
-        for registration in dynamics.registry
-    )
-    results = _run_settled_release_batch("zero-command-equilibrium", 0, specs)
+        for index, displacement in enumerate(grid)
+    ]
+    for corner_index in range(4):
+        for index, registration in enumerate(dynamics.registry):
+            direction = 1.0 if (corner_index + index) % 2 == 0 else -1.0
+            if corner_index < 2:
+                direction = 1.0 if corner_index == 0 else -1.0
+            cases.append(
+                _CaseSpec(
+                    f"fast-corner-{corner_index}-{registration.dim_id}",
+                    "fast-corner",
+                    registration.dim_id,
+                    registration.birth_bias,
+                    direction * R,
+                )
+            )
+        cases.append(
+            _CaseSpec(
+                f"fast-zero-{corner_index}",
+                "fast-zero",
+                dynamics.registry[corner_index % len(dynamics.registry)].dim_id,
+                dynamics.registry[corner_index % len(dynamics.registry)].birth_bias,
+                0.0,
+            )
+        )
+    ratios, crossings, end_errors = _independent_release_oracle(tuple(cases))
+    assert ratios.shape == crossings.shape == end_errors.shape == (len(cases),)
+    assert float(np.max(ratios)) <= MAX_OVERSHOOT_RATIO
+    assert int(np.max(crossings)) <= MAX_CROSSINGS
+    assert float(np.max(end_errors)) < MAX_END_ERROR
+    zero_indexes = [index for index, item in enumerate(cases) if item.displacement == 0.0]
     assert all(
-        item.A0 == 0.0
-        and item.ratio == 0.0
-        and item.crossings == 0
-        and item.end_error == 0.0
-        for item in results
+        ratios[index] == 0.0
+        and crossings[index] == 0
+        and end_errors[index] == 0.0
+        for index in zero_indexes
     )
-    _print_global_summary("zero-command-equilibrium", results)

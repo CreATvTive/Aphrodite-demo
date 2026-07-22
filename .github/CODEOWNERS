@@ -10,6 +10,15 @@ src/memory/** @your-org/maintainers-memory
 cli/** @your-org/maintainers-cli
 tests/** @your-org/maintainers-tests
 
+# Chatbox v0 当前主线与权威文档
+# 以下仍使用仓库现有占位 Owner；替换为真实 GitHub 用户/团队前不视为有效审批人
+app/chatbox/** @your-org/owners
+docs/chatbox/** @your-org/owners
+docs/chatbox/contracts/** @your-org/owners
+docs/design/aphrodite_private_origin_design_source.md @your-org/owners
+docs/governance/pr-governance.md @your-org/owners
+AGENTS.md @your-org/owners
+
 # 高风险路径（必须包含 Owner）
 .github/workflows/** @your-org/owners
 agent_kernel/** @your-org/owners @your-org/maintainers-kernel

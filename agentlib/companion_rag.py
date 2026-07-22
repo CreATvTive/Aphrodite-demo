@@ -7,6 +7,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, cast, runtime_checkable
 
+from ._utils import _dedup_keep_order_stripped_nonempty
+
 
 @dataclass(frozen=True)
 class RagCandidate:
@@ -546,12 +548,4 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _dedup_keep_order(items: List[str]) -> List[str]:
-    seen = set()
-    out: List[str] = []
-    for x in items:
-        k = str(x).strip()
-        if not k or k in seen:
-            continue
-        seen.add(k)
-        out.append(k)
-    return out
+    return _dedup_keep_order_stripped_nonempty(items)

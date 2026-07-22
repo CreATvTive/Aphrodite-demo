@@ -1,10 +1,10 @@
 # PR 提交模板（必填）
 
-> 标题请包含模块标识，例如：`[module:agentlib] feat: ...`
+> 标题请包含模块标识，例如：`[module:chatbox] feat: ...`
 
 ## 1) 改动范围（必填）
 
-- 模块（与标题一致）：`<agentlib | agent-kernel | semantic-trigger | character | memory | voice | cli | tests>`
+- 模块（与标题一致）：`<chatbox | chatbox-docs | chatbox-contracts | tests | agentlib (legacy/non-default) | agent-kernel (legacy/non-default) | semantic-trigger (legacy/non-default) | memory (legacy/non-default) | cli (legacy/non-default)>`
 - 影响目录（逐条列出）：
   - `...`
 - 是否跨模块：`是 / 否`
@@ -40,9 +40,9 @@
 
 ## 5) 审批规则确认（必填）
 
-- [ ] 我已阅读 `docs/pr-governance.md` 并按路径级权限规则发起评审
+- [ ] 我已阅读 `docs/governance/pr-governance.md` 并按路径级权限规则发起评审
 - [ ] 若命中高风险路径，已请求 Owner 审批
-- [ ] 本 PR 未越界修改其他模块目录（将由 CI 自动校验）
+- [ ] 我已自检本 PR 未越界修改其他模块目录；当前 workflow 仅检查模块声明、合规问答、路径白名单一致性及越界批准记录文本，不自动验证高风险 Owner 审批或 branch protection
 
 ## 6) 合规问答（必填，填写“是/否”）
 

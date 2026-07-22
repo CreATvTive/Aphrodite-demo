@@ -6,6 +6,7 @@ import inspect
 import math
 from pathlib import Path
 import statistics
+import struct
 
 import pytest
 
@@ -13,6 +14,7 @@ from app.chatbox.field_dynamics import (
     ATTRACTOR_DISPLACEMENT_RADIUS,
     AttractorMove,
     DimensionRegistration,
+    DynamicsContractError,
     FieldDynamics,
     InvalidAttractorMoveError,
     InvalidRegistrationError,
@@ -24,6 +26,51 @@ from app.chatbox.field_dynamics import (
 
 
 PRODUCTION_SEED = 0xA9F0D17E
+MILLION_TICK_COUNT = 1_000_000
+MILLION_CHECKPOINT_STRIDE = 10_000
+
+
+def _install_test_rngs(dynamics: FieldDynamics, rngs) -> FieldDynamics:
+    """Test-private: install custom RNG objects after legal construction."""
+    candidate_rngs = tuple(rngs)
+    if len(candidate_rngs) != len(dynamics.registry):
+        raise ValueError(
+            f"rng count {len(candidate_rngs)} != registry length {len(dynamics.registry)}"
+        )
+    dynamics._rngs = candidate_rngs
+    return dynamics
+
+
+def _binary64_projection(value):
+    """Project nested evidence with every float represented by exact bytes."""
+    if isinstance(value, float):
+        return ("binary64", struct.pack(">d", value))
+    if isinstance(value, tuple):
+        return tuple(_binary64_projection(item) for item in value)
+    if isinstance(value, list):
+        return tuple(_binary64_projection(item) for item in value)
+    if hasattr(value, "__dataclass_fields__"):
+        return (
+            type(value).__name__,
+            tuple(
+                (name, _binary64_projection(getattr(value, name)))
+                for name in value.__dataclass_fields__
+            ),
+        )
+    return value
+
+
+def _construct_test_dynamics(
+    registry=None, *, rng_factory=None
+) -> FieldDynamics:
+    """Construct legally and centralize any test-private RNG installation."""
+    if rng_factory is None or type(rng_factory) is SeededGaussianRngFactory:
+        return FieldDynamics(registry, rng_factory=rng_factory)
+    dynamics = FieldDynamics(registry)
+    return _install_test_rngs(
+        dynamics,
+        (rng_factory.create(item.dim_id) for item in dynamics.registry),
+    )
 
 
 class _ConstantRng:
@@ -204,18 +251,6 @@ class _LateFailureRng:
         return draw
 
 
-class _LateFailureRngFactory:
-    def __init__(self, fail_stream: str, bad_value: float, bad_from_tick: int = 0) -> None:
-        self._fail_stream = fail_stream
-        self._bad_value = bad_value
-        self._bad_from_tick = bad_from_tick
-
-    def create(self, stream: str):
-        if stream == self._fail_stream:
-            return _LateFailureRng(42, stream, self._bad_value, self._bad_from_tick)
-        return _ControlledRng(42, stream, 0.0)
-
-
 class _BadRngFactory:
     """Factory that produces a custom bad RNG for one stream, normal for others."""
 
@@ -276,7 +311,173 @@ class _SeedFlipRng:
         return draw
 
 
-def test_birth_registry_exact_order_parameters_and_synthetic_dimension_count() -> None:
+class _CountingUnsupportedFactory:
+    def __init__(self) -> None:
+        self.create_calls = 0
+
+    def create(self, stream: str):
+        self.create_calls += 1
+        raise AssertionError("unsupported factory must not be called")
+
+
+class _SeededFactorySubclass(SeededGaussianRngFactory):
+    pass
+
+
+class _TypeNameBombMeta(type):
+    def __getattribute__(cls, name: str):
+        if name == "__name__":
+            raise RuntimeError("untrusted type name must not be read")
+        return super().__getattribute__(name)
+
+
+class _NameBombUnsupportedFactory(metaclass=_TypeNameBombMeta):
+    def __init__(self) -> None:
+        self.create_calls = 0
+        self.draw_calls = 0
+
+    def create(self, stream: str):
+        self.create_calls += 1
+
+        class _Provider:
+            def draw(inner_self, draw_index: int):
+                self.draw_calls += 1
+                raise AssertionError("unsupported factory provider must not draw")
+
+        return _Provider()
+
+
+class _NameBombUnsupportedProvider(metaclass=_TypeNameBombMeta):
+    def __init__(self) -> None:
+        self.draw_calls = 0
+
+    def draw(self, draw_index: int):
+        self.draw_calls += 1
+        raise AssertionError("unsupported provider must not draw")
+
+
+class _StringBombFactoryError(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("factory exception string must not be read")
+
+
+def test_rng_factory_name_bomb_is_rejected_without_create_or_draw() -> None:
+    registry = (_synthetic_registration("factory-name-bomb"),)
+    unsupported = _NameBombUnsupportedFactory()
+    dynamics = None
+
+    with pytest.raises(DynamicsContractError) as caught:
+        dynamics = FieldDynamics(registry, rng_factory=unsupported)
+
+    assert caught.value.anomaly.code == "unsupported_rng_factory"
+    assert caught.value.anomaly.stage == "rng_factory"
+    assert caught.value.anomaly.dim_id is None
+    assert caught.value.anomaly.detail == (
+        "rng_factory must be an exact SeededGaussianRngFactory instance"
+    )
+    assert unsupported.create_calls == 0
+    assert unsupported.draw_calls == 0
+    assert dynamics is None
+
+
+def test_rng_provider_name_bomb_stops_before_later_create_draw_or_publish(
+    monkeypatch,
+) -> None:
+    registry = tuple(_synthetic_registration(f"name-bomb-{index}") for index in range(3))
+    original_create = SeededGaussianRngFactory.create
+    create_calls: list[str] = []
+    unsupported = _NameBombUnsupportedProvider()
+    dynamics = None
+
+    def wrong_middle(self, stream: str):
+        create_calls.append(stream)
+        if stream == registry[1].dim_id:
+            return unsupported
+        return original_create(self, stream)
+
+    monkeypatch.setattr(SeededGaussianRngFactory, "create", wrong_middle)
+    with pytest.raises(DynamicsContractError) as caught:
+        dynamics = FieldDynamics(registry, rng_factory=SeededGaussianRngFactory(17))
+
+    assert caught.value.anomaly.code == "unsupported_rng_provider"
+    assert caught.value.anomaly.stage == "rng_factory"
+    assert caught.value.anomaly.dim_id == registry[1].dim_id
+    assert caught.value.anomaly.detail == (
+        "factory.create() returned an unsupported RNG provider"
+    )
+    assert create_calls == [registry[0].dim_id, registry[1].dim_id]
+    assert registry[2].dim_id not in create_calls
+    assert unsupported.draw_calls == 0
+    assert dynamics is None
+
+
+def test_rng_constructor_nominal_boundary_rejects_before_create_or_draw() -> None:
+    registry = (_synthetic_registration("boundary"),)
+    unsupported = _CountingUnsupportedFactory()
+    cases = (unsupported, _SeededFactorySubclass(7), object(), 7, False)
+
+    for factory in cases:
+        with pytest.raises(Exception) as caught:
+            FieldDynamics(registry, rng_factory=factory)
+        assert caught.value.anomaly.code == "unsupported_rng_factory"
+        assert caught.value.anomaly.stage == "rng_factory"
+    assert unsupported.create_calls == 0
+
+    assert FieldDynamics(registry).snapshot().tick == 0
+    assert FieldDynamics(
+        registry, rng_factory=SeededGaussianRngFactory(7)
+    ).snapshot().tick == 0
+
+
+def test_rng_provider_boundary_is_checked_immediately_and_publishes_nothing(
+    monkeypatch,
+) -> None:
+    registry = tuple(_synthetic_registration(f"provider-{index}") for index in range(3))
+    original_create = SeededGaussianRngFactory.create
+    create_calls: list[str] = []
+
+    def wrong_middle(self, stream: str):
+        create_calls.append(stream)
+        if stream == registry[1].dim_id:
+            return _ControlledRng(self.seed, stream, 0.0)
+        return original_create(self, stream)
+
+    monkeypatch.setattr(SeededGaussianRngFactory, "create", wrong_middle)
+    with pytest.raises(Exception) as caught:
+        FieldDynamics(registry, rng_factory=SeededGaussianRngFactory(17))
+
+    assert caught.value.anomaly.code == "unsupported_rng_provider"
+    assert caught.value.anomaly.stage == "rng_factory"
+    assert caught.value.anomaly.dim_id == registry[1].dim_id
+    assert create_calls == [registry[0].dim_id, registry[1].dim_id]
+
+
+def test_exact_rng_factory_exception_string_bomb_maps_stably_and_preserves_cause(
+    monkeypatch,
+) -> None:
+    registry = (_synthetic_registration("factory-exception-bomb"),)
+    original = _StringBombFactoryError()
+    dynamics = None
+
+    def raise_string_bomb(self, stream: str):
+        raise original
+
+    monkeypatch.setattr(SeededGaussianRngFactory, "create", raise_string_bomb)
+    with pytest.raises(DynamicsContractError) as caught:
+        dynamics = FieldDynamics(registry, rng_factory=SeededGaussianRngFactory(17))
+
+    assert caught.value.anomaly.code == "rng_factory_failure"
+    assert caught.value.anomaly.stage == "rng_factory"
+    assert caught.value.anomaly.dim_id is None
+    assert caught.value.anomaly.detail == "factory.create() raised an exception"
+    assert caught.value.__cause__ is original
+    assert dynamics is None
+
+
+@pytest.mark.parametrize("dimension_count", [1, 3, 7, 12, 17])
+def test_birth_registry_exact_order_parameters_and_synthetic_dimension_count(
+    dimension_count: int,
+) -> None:
     registry = build_birth_registry()
     assert [(item.dim_id, item.temporary_name, item.birth_bias) for item in registry] == [
         ("birth_00", "能量", 0.0),
@@ -302,15 +503,20 @@ def test_birth_registry_exact_order_parameters_and_synthetic_dimension_count() -
         assert item.soft_boundary_width == 0.25
         assert item.soft_boundary_strength == (1.0 / 120.0) ** 2
 
-    synthetic = tuple(_synthetic_registration(f"s-{index}", index / 10) for index in range(3))
-    dynamics = FieldDynamics(synthetic, rng_factory=ConstantGaussianRngFactory())
-    assert tuple(item.dim_id for item in dynamics.registry) == ("s-0", "s-1", "s-2")
-    assert len(dynamics.tick().dimensions) == 3
-    assert len(dynamics.snapshot().dimensions) == 3
+    synthetic = tuple(
+        _synthetic_registration(f"s-{index}", index / 10)
+        for index in range(dimension_count)
+    )
+    dynamics = _construct_test_dynamics(synthetic, rng_factory=ConstantGaussianRngFactory())
+    assert tuple(item.dim_id for item in dynamics.registry) == tuple(
+        f"s-{index}" for index in range(dimension_count)
+    )
+    assert len(dynamics.tick().dimensions) == dimension_count
+    assert len(dynamics.snapshot().dimensions) == dimension_count
 
 
 def test_birth_initialization_and_registration_metadata_do_not_change_on_tick() -> None:
-    dynamics = FieldDynamics(rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(rng_factory=ConstantGaussianRngFactory())
     before = dynamics.snapshot()
     for dimension in before.dimensions:
         assert dimension.value == dimension.attractor == dimension.soft_restoring_baseline
@@ -325,7 +531,7 @@ def test_birth_initialization_and_registration_metadata_do_not_change_on_tick() 
 
 
 def test_zero_innovation_is_the_only_ou_off_mechanism_and_equilibrium_is_exact() -> None:
-    dynamics = FieldDynamics(rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(rng_factory=ConstantGaussianRngFactory())
     observation = dynamics.tick()
     assert observation.tick_before == 0
     assert observation.tick_after == 1
@@ -344,8 +550,8 @@ def test_zero_innovation_is_the_only_ou_off_mechanism_and_equilibrium_is_exact()
 
 
 def test_seeded_ou_is_reproducible_traceable_zero_mean_long_correlated_and_independent() -> None:
-    left = FieldDynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
-    right = FieldDynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
+    left = _construct_test_dynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
+    right = _construct_test_dynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
     innovation_by_dim = [[] for _ in left.registry]
     ou_series = []
     for tick_index in range(40_000):
@@ -397,7 +603,7 @@ def test_seeded_ou_is_reproducible_traceable_zero_mean_long_correlated_and_indep
 def test_all_dimensions_critical_step_response_has_no_overshoot_and_matches_analytic(
     direction: float,
 ) -> None:
-    dynamics = FieldDynamics(rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(rng_factory=ConstantGaussianRngFactory())
     step = 0.2 * direction
     for registration in dynamics.registry:
         dynamics.move_attractor(AttractorMove(registration.dim_id, step, "test", "small step"))
@@ -442,7 +648,7 @@ def test_soft_boundary_is_continuous_unclamped_reconstructable_and_has_linear_ta
     spring_coefficient = (1.0 / registration.fast_e_fold_s) ** 2
 
     def evaluate(displacement: float):
-        dynamics = FieldDynamics((registration,), rng_factory=ConstantGaussianRngFactory())
+        dynamics = _construct_test_dynamics((registration,), rng_factory=ConstantGaussianRngFactory())
         dynamics.move_attractor(
             AttractorMove("soft", displacement / spring_coefficient, "test", "boundary pressure")
         )
@@ -508,14 +714,14 @@ def test_invalid_inputs_and_nonfinite_rng_are_explicit_and_tick_state_is_atomic(
         with pytest.raises(InvalidRegistrationError):
             replace(template, **changes)
 
-    dynamics = FieldDynamics((template,), rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics((template,), rng_factory=ConstantGaussianRngFactory())
     before_move = dynamics.snapshot()
     with pytest.raises(InvalidAttractorMoveError) as move_error:
         dynamics.move_attractor(AttractorMove("valid", math.nan, "test", "invalid"))
     assert move_error.value.anomaly.code == "non_finite_attractor_delta"
     assert dynamics.snapshot() == before_move
 
-    inf_rng_dynamics = FieldDynamics(
+    inf_rng_dynamics = _construct_test_dynamics(
         (template,), rng_factory=ConstantGaussianRngFactory(math.inf)
     )
     before_tick = inf_rng_dynamics.snapshot()
@@ -532,7 +738,7 @@ def test_invalid_inputs_and_nonfinite_rng_are_explicit_and_tick_state_is_atomic(
 
 
 def test_snapshot_and_registration_are_deeply_read_only_and_no_direct_write_api_exists() -> None:
-    dynamics = FieldDynamics(rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(rng_factory=ConstantGaussianRngFactory())
     snapshot = dynamics.snapshot()
     with pytest.raises(FrozenInstanceError):
         setattr(snapshot, "tick", 9)
@@ -664,7 +870,7 @@ def test_rng_transaction_retry_after_late_nonfinite_rng_draw(capsys) -> None:
         _synthetic_registration("d-2"),
     )
     factory = _RetryRngFactory("d-2", bad_value=math.inf, bad_at_index=0)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     before = dynamics.snapshot()
     assert before.tick == 0
     with pytest.raises((InvalidRngDrawError, NonFiniteDynamicsError)) as exc:
@@ -681,7 +887,7 @@ def test_rng_transaction_retry_after_late_nonfinite_rng_draw(capsys) -> None:
     retry_snapshot = dynamics.snapshot()
     assert retry_snapshot.tick == 1
     control_factory = _ControlledRngFactory(default_value=0.0, seed=42)
-    control = FieldDynamics(registry, rng_factory=control_factory)
+    control = _construct_test_dynamics(registry, rng_factory=control_factory)
     control.tick()
     control_equal = _snapshot_tuple(retry_snapshot) == _snapshot_tuple(control.snapshot())
     assert control_equal
@@ -723,7 +929,7 @@ def test_rng_transaction_retry_after_late_nonfinite_candidate(capsys) -> None:
         ),
     )
     factory = _RetryRngFactory("d-2", bad_value=1e3, bad_at_index=0)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     before = dynamics.snapshot()
     assert before.tick == 0
     with pytest.raises((InvalidRngDrawError, NonFiniteDynamicsError)) as exc:
@@ -740,7 +946,7 @@ def test_rng_transaction_retry_after_late_nonfinite_candidate(capsys) -> None:
     retry_snapshot = dynamics.snapshot()
     assert retry_snapshot.tick == 1
     control_factory = _ControlledRngFactory(default_value=0.0, seed=42)
-    control = FieldDynamics(registry, rng_factory=control_factory)
+    control = _construct_test_dynamics(registry, rng_factory=control_factory)
     control.tick()
     control_equal = _snapshot_tuple(retry_snapshot) == _snapshot_tuple(control.snapshot())
     assert control_equal
@@ -767,7 +973,7 @@ def test_rng_transaction_seed_trace_after_failure_and_retry(capsys) -> None:
         _synthetic_registration("d-2"),
     )
     factory = _RetryRngFactory("d-1", bad_value=math.inf, bad_at_index=0)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     before = dynamics.snapshot()
     assert before.tick == 0
     with pytest.raises((InvalidRngDrawError, NonFiniteDynamicsError)) as exc:
@@ -801,7 +1007,7 @@ def test_rng_transaction_retry_after_malformed_rng_draw(capsys) -> None:
     from app.chatbox.field_dynamics import DynamicsContractError
     registry = tuple(_synthetic_registration(f"d-{i}") for i in range(3))
     factory = _RetryWrongTypeRngFactory("d-2", bad_at_index=0)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     before = dynamics.snapshot()
     with pytest.raises(InvalidRngDrawError) as exc:
         dynamics.tick()
@@ -811,7 +1017,7 @@ def test_rng_transaction_retry_after_malformed_rng_draw(capsys) -> None:
     assert after_fail == before
     assert after_fail.tick == 0
     control_factory = _ControlledRngFactory(default_value=0.0, seed=42)
-    control = FieldDynamics(registry, rng_factory=control_factory)
+    control = _construct_test_dynamics(registry, rng_factory=control_factory)
     retry_obs = dynamics.tick()
     assert retry_obs.tick_after == 1
     for dim in retry_obs.dimensions:
@@ -823,6 +1029,84 @@ def test_rng_transaction_retry_after_malformed_rng_draw(capsys) -> None:
         f"rng_transaction_retry stage=malformed_rng failure_tick=0 "
         f"retry_draw_indexes={[d.rng_draw.draw_index for d in retry_obs.dimensions]} "
         f"control_equal={control_equal}"
+    )
+
+
+class _OneShotFaultRng:
+    """Test wrapper whose fault branch never consumes its canonical delegate."""
+
+    def __init__(self, delegate, seed: int, stream: str, fault_kind: str) -> None:
+        self.delegate = delegate
+        self.seed = seed
+        self.stream = stream
+        self.fault_kind = fault_kind
+        self.armed = True
+        self.delegate_calls = 0
+
+    def draw(self, draw_index: int):
+        if self.armed and draw_index == 1:
+            self.armed = False
+            if self.fault_kind == "exception":
+                raise RuntimeError("one-shot draw failure")
+            if self.fault_kind == "wrong-type":
+                return {"draw_index": draw_index}
+            if self.fault_kind == "nan":
+                return RngDraw(self.seed, self.stream, draw_index, math.nan)
+            if self.fault_kind == "inf":
+                return RngDraw(self.seed, self.stream, draw_index, math.inf)
+            if self.fault_kind == "seed-flip":
+                return RngDraw(self.seed + 1, self.stream, draw_index, 0.0)
+            if self.fault_kind == "candidate-nonfinite":
+                return RngDraw(self.seed, self.stream, draw_index, 1e308)
+            raise AssertionError(self.fault_kind)
+        self.delegate_calls += 1
+        return self.delegate.draw(draw_index)
+
+
+@pytest.mark.parametrize("fault_ordinal", [0, 1, 2], ids=["first", "middle", "last"])
+@pytest.mark.parametrize(
+    "fault_kind",
+    ["exception", "wrong-type", "nan", "inf", "seed-flip", "candidate-nonfinite"],
+)
+def test_rng_failure_retry_is_binary64_atomic_across_3_by_6_matrix(
+    fault_ordinal: int, fault_kind: str
+) -> None:
+    seed = 0x51A7
+    registry = tuple(_synthetic_registration(f"matrix-{index}") for index in range(3))
+    if fault_kind == "candidate-nonfinite":
+        registry = tuple(
+            replace(item, ou_acceleration_sigma=1e308)
+            if index == fault_ordinal
+            else item
+            for index, item in enumerate(registry)
+        )
+    faulted = FieldDynamics(registry, rng_factory=SeededGaussianRngFactory(seed))
+    control = FieldDynamics(registry, rng_factory=SeededGaussianRngFactory(seed))
+    wrappers = []
+    for index, (registration, delegate) in enumerate(zip(registry, faulted._rngs)):
+        if index == fault_ordinal:
+            wrapper = _OneShotFaultRng(delegate, seed, registration.dim_id, fault_kind)
+            wrappers.append(wrapper)
+        else:
+            wrappers.append(delegate)
+    _install_test_rngs(faulted, wrappers)
+
+    assert _binary64_projection(faulted.tick()) == _binary64_projection(control.tick())
+    before_failure = _binary64_projection(faulted.snapshot())
+    target_wrapper = wrappers[fault_ordinal]
+    assert isinstance(target_wrapper, _OneShotFaultRng)
+    calls_before_failure = target_wrapper.delegate_calls
+
+    with pytest.raises(Exception):
+        faulted.tick()
+
+    assert target_wrapper.delegate_calls == calls_before_failure
+    assert _binary64_projection(faulted.snapshot()) == before_failure
+    retry = faulted.tick()
+    control_next = control.tick()
+    assert _binary64_projection(retry) == _binary64_projection(control_next)
+    assert _binary64_projection(faulted.snapshot()) == _binary64_projection(
+        control.snapshot()
     )
 
 
@@ -848,50 +1132,34 @@ def test_seed_and_registry_parameter_snapshot(capsys) -> None:
         print(output, end="")
 
 
+@pytest.mark.acceptance
+@pytest.mark.slow
 def test_million_tick_production_pool_is_finite_bounded_reconstructable_and_nonrandom_walking() -> None:
-    dynamics = FieldDynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
+    """Canonical P1 10^6-tick acceptance through the real production path.
+
+    ``FieldDynamics.tick`` validates every candidate scalar on every tick.
+    Test-side reconstruction and trace assertions are sampled deterministically
+    because their formulas and edge behavior are covered independently by the
+    fast numerical tests; quarter statistics still consume every produced
+    state, so no part of the million-tick trajectory is skipped.
+    """
+
+    dynamics = _construct_test_dynamics(rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED))
     dimension_count = len(dynamics.registry)
     minima = [math.inf] * dimension_count
     maxima = [-math.inf] * dimension_count
     max_residual = [0.0] * dimension_count
     quarter_sums = [[0.0] * dimension_count for _ in range(4)]
     quarter_squares = [[0.0] * dimension_count for _ in range(4)]
-    quarter_size = 250_000
+    quarter_size = MILLION_TICK_COUNT // 4
 
-    for tick_index in range(1_000_000):
+    for tick_index in range(MILLION_TICK_COUNT):
         observation = dynamics.tick()
-        assert observation.tick_before == tick_index
-        assert observation.tick_after == tick_index + 1
-        assert observation.anomalies == ()
         quarter = tick_index // quarter_size
         for dim_index, dimension in enumerate(observation.dimensions):
-            assert dimension.anomalies == ()
-            assert all(math.isfinite(value) for value in _observation_numbers(dimension))
-            assert dimension.rng_draw.seed == PRODUCTION_SEED
-            assert dimension.rng_draw.stream == dimension.dim_id
-            assert dimension.rng_draw.draw_index == tick_index
-            reconstructed_ou = (
-                dimension.ou_rho * dimension.before_ou_acceleration
-                + dimension.ou_innovation_scale * dimension.rng_draw.value
+            displacement = (
+                dimension.after_value - dimension.after_soft_restoring_baseline
             )
-            reconstructed_velocity = (
-                dimension.before_velocity
-                + dimension.spring_acceleration
-                + dimension.damping_acceleration
-                + reconstructed_ou
-                + dimension.soft_restoring_acceleration
-            )
-            reconstructed_value = (
-                dimension.pre_boundary_value_proposal
-                + dimension.soft_restoring_acceleration
-            )
-            residual = max(
-                abs(dimension.after_ou_acceleration - reconstructed_ou),
-                abs(dimension.after_velocity - reconstructed_velocity),
-                abs(dimension.after_value - reconstructed_value),
-            )
-            max_residual[dim_index] = max(max_residual[dim_index], residual)
-            displacement = dimension.after_value - dimension.after_soft_restoring_baseline
             assert abs(displacement) < 4.0 * (
                 dynamics.registry[dim_index].soft_boundary_start
                 + dynamics.registry[dim_index].soft_boundary_width
@@ -900,6 +1168,44 @@ def test_million_tick_production_pool_is_finite_bounded_reconstructable_and_nonr
             maxima[dim_index] = max(maxima[dim_index], displacement)
             quarter_sums[quarter][dim_index] += displacement
             quarter_squares[quarter][dim_index] += displacement * displacement
+
+        if (
+            tick_index < 10
+            or (tick_index + 1) % MILLION_CHECKPOINT_STRIDE == 0
+            or tick_index + 1 == MILLION_TICK_COUNT
+        ):
+            assert observation.tick_before == tick_index
+            assert observation.tick_after == tick_index + 1
+            assert observation.anomalies == ()
+            for dim_index, dimension in enumerate(observation.dimensions):
+                assert dimension.anomalies == ()
+                assert all(
+                    math.isfinite(value) for value in _observation_numbers(dimension)
+                )
+                assert dimension.rng_draw.seed == PRODUCTION_SEED
+                assert dimension.rng_draw.stream == dimension.dim_id
+                assert dimension.rng_draw.draw_index == tick_index
+                reconstructed_ou = (
+                    dimension.ou_rho * dimension.before_ou_acceleration
+                    + dimension.ou_innovation_scale * dimension.rng_draw.value
+                )
+                reconstructed_velocity = (
+                    dimension.before_velocity
+                    + dimension.spring_acceleration
+                    + dimension.damping_acceleration
+                    + reconstructed_ou
+                    + dimension.soft_restoring_acceleration
+                )
+                reconstructed_value = (
+                    dimension.pre_boundary_value_proposal
+                    + dimension.soft_restoring_acceleration
+                )
+                residual = max(
+                    abs(dimension.after_ou_acceleration - reconstructed_ou),
+                    abs(dimension.after_velocity - reconstructed_velocity),
+                    abs(dimension.after_value - reconstructed_value),
+                )
+                max_residual[dim_index] = max(max_residual[dim_index], residual)
 
     variances = []
     for quarter in range(4):
@@ -919,7 +1225,7 @@ def test_million_tick_production_pool_is_finite_bounded_reconstructable_and_nonr
             f"quarter_variances={[round(item[index], 12) for item in variances]} "
             f"max_reconstruction_residual={max_residual[index]:.3g}"
         )
-    assert dynamics.snapshot().tick == 1_000_000
+    assert dynamics.snapshot().tick == MILLION_TICK_COUNT
 
 
 def test_late_dimension_nonfinite_candidate_preserves_entire_snapshot_and_tick() -> None:
@@ -943,7 +1249,7 @@ def test_late_dimension_nonfinite_candidate_preserves_entire_snapshot_and_tick()
         ),
     )
     factory = _ControlledRngFactory(default_value=1e3, seed=42)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     before = dynamics.snapshot()
     assert before.tick == 0
     with pytest.raises((InvalidRngDrawError, NonFiniteDynamicsError)) as exc:
@@ -962,7 +1268,7 @@ def test_late_dimension_nonfinite_candidate_preserves_entire_snapshot_and_tick()
 def test_move_attractor_invalid_inputs_are_structured_and_atomic() -> None:
     from app.chatbox.field_dynamics import DynamicsContractError, NonFiniteDynamicsError
     registry = tuple(_synthetic_registration(f"d-{i}") for i in range(2))
-    dynamics = FieldDynamics(registry, rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(registry, rng_factory=ConstantGaussianRngFactory())
     before = dynamics.snapshot()
 
     with pytest.raises(InvalidAttractorMoveError) as exc:
@@ -1001,7 +1307,7 @@ def test_move_attractor_invalid_inputs_are_structured_and_atomic() -> None:
     assert dynamics.snapshot() == before
 
     big_registry = (_synthetic_registration("big", bias=1e308),)
-    big_dynamics = FieldDynamics(big_registry, rng_factory=ConstantGaussianRngFactory())
+    big_dynamics = _construct_test_dynamics(big_registry, rng_factory=ConstantGaussianRngFactory())
     big_before = big_dynamics.snapshot()
     with pytest.raises(InvalidAttractorMoveError) as exc:
         big_dynamics.move_attractor(AttractorMove("big", 1e308, "src", "rationale"))
@@ -1024,7 +1330,7 @@ def test_move_attractor_invalid_inputs_are_structured_and_atomic() -> None:
 def test_move_attractor_closed_domain_is_cumulative_and_baseline_relative(
     dim_id: str, direction: float
 ) -> None:
-    dynamics = FieldDynamics(rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(rng_factory=ConstantGaussianRngFactory())
     initial = dynamics.snapshot()
     target = next(item for item in initial.dimensions if item.dim_id == dim_id)
     baseline = target.soft_restoring_baseline
@@ -1049,7 +1355,7 @@ def test_move_attractor_out_of_domain_diagnostic_is_complete_and_atomic(
     direction: float, obvious: bool
 ) -> None:
     registry = build_birth_registry()
-    dynamics = FieldDynamics(registry, rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics(registry, rng_factory=ConstantGaussianRngFactory())
     baseline = registry[1].birth_bias
     boundary = baseline + direction * ATTRACTOR_DISPLACEMENT_RADIUS
     candidate = (
@@ -1083,7 +1389,7 @@ def test_malformed_rng_draw_type_stream_index_and_seed_are_structured_and_atomic
     registry = tuple(_synthetic_registration(f"d-{i}") for i in range(3))
 
     factory_bad_type = _BadRngFactory("d-1", _WrongTypeRng)
-    dynamics = FieldDynamics(registry, rng_factory=factory_bad_type)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory_bad_type)
     before = dynamics.snapshot()
     with pytest.raises(InvalidRngDrawError) as exc:
         dynamics.tick()
@@ -1093,7 +1399,7 @@ def test_malformed_rng_draw_type_stream_index_and_seed_are_structured_and_atomic
     assert dynamics.snapshot().tick == 0
 
     factory_bad_stream = _BadRngFactory("d-2", _MismatchedStreamRng)
-    dynamics2 = FieldDynamics(registry, rng_factory=factory_bad_stream)
+    dynamics2 = _construct_test_dynamics(registry, rng_factory=factory_bad_stream)
     before2 = dynamics2.snapshot()
     with pytest.raises(InvalidRngDrawError) as exc:
         dynamics2.tick()
@@ -1103,7 +1409,7 @@ def test_malformed_rng_draw_type_stream_index_and_seed_are_structured_and_atomic
     assert dynamics2.snapshot().tick == 0
 
     factory_bad_index = _BadRngFactory("d-0", _MismatchedIndexRng)
-    dynamics3 = FieldDynamics(registry, rng_factory=factory_bad_index)
+    dynamics3 = _construct_test_dynamics(registry, rng_factory=factory_bad_index)
     before3 = dynamics3.snapshot()
     with pytest.raises(InvalidRngDrawError) as exc:
         dynamics3.tick()
@@ -1113,7 +1419,7 @@ def test_malformed_rng_draw_type_stream_index_and_seed_are_structured_and_atomic
     assert dynamics3.snapshot().tick == 0
 
     factory_seed_flip = _BadRngFactory("d-1", _SeedFlipRng)
-    dynamics4 = FieldDynamics(registry, rng_factory=factory_seed_flip)
+    dynamics4 = _construct_test_dynamics(registry, rng_factory=factory_seed_flip)
     dynamics4.tick()
     before4 = dynamics4.snapshot()
     assert before4.tick == 1
@@ -1130,7 +1436,7 @@ def test_independent_numerical_reconstruction_of_non_equilibrium_trajectory() ->
     factory = _ControlledRngFactory(default_value=0.7, seed=99)
     factory.set_value("d-1", -0.5)
     factory.set_value("d-2", 1.3)
-    dynamics = FieldDynamics(registry, rng_factory=factory)
+    dynamics = _construct_test_dynamics(registry, rng_factory=factory)
     dynamics.move_attractor(AttractorMove("d-0", 0.4, "test", "displace"))
     dynamics.move_attractor(AttractorMove("d-2", -0.3, "test", "displace"))
 
@@ -1190,6 +1496,44 @@ def test_independent_numerical_reconstruction_of_non_equilibrium_trajectory() ->
     assert max_indep_residual < 1e-12
 
 
+def test_registry_reordering_is_trajectory_equivariant() -> None:
+    registry = tuple(
+        _synthetic_registration(f"perm-{index}", bias=(index - 3) / 20.0)
+        for index in range(7)
+    )
+    permuted = tuple(registry[index] for index in (4, 0, 6, 2, 5, 1, 3))
+    original = _construct_test_dynamics(
+        registry, rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED)
+    )
+    reordered = _construct_test_dynamics(
+        permuted, rng_factory=SeededGaussianRngFactory(PRODUCTION_SEED)
+    )
+    for index, registration in enumerate(registry):
+        delta = ((index % 3) - 1) * 0.17
+        original.move_attractor(
+            AttractorMove(registration.dim_id, delta, "test", "permutation equivariance")
+        )
+        reordered.move_attractor(
+            AttractorMove(registration.dim_id, delta, "test", "permutation equivariance")
+        )
+
+    for _ in range(250):
+        original_observation = original.tick()
+        reordered_observation = reordered.tick()
+        original_by_id = {
+            item.dim_id: item for item in original_observation.dimensions
+        }
+        reordered_by_id = {
+            item.dim_id: item for item in reordered_observation.dimensions
+        }
+        assert reordered_by_id == original_by_id
+    assert {
+        item.dim_id: item for item in reordered.snapshot().dimensions
+    } == {
+        item.dim_id: item for item in original.snapshot().dimensions
+    }
+
+
 def test_ast_dynamic_import_check_rejects_attribute_form_dynamic_loading() -> None:
     source_path = Path(__file__).parents[2] / "app" / "chatbox" / "field_dynamics.py"
     source = source_path.read_text(encoding="utf-8")
@@ -1228,7 +1572,7 @@ def test_derived_parameter_domain_legal_boundary_and_default_passes() -> None:
         _synthetic_registration("boundary_s"), soft_boundary_strength=0.999999
     )
     assert boundary_strength.soft_boundary_strength < 1.0
-    dynamics = FieldDynamics(
+    dynamics = _construct_test_dynamics(
         (boundary_fast, boundary_strength),
         rng_factory=ConstantGaussianRngFactory(),
     )
@@ -1246,7 +1590,7 @@ def test_zero_soft_restoring_has_immutable_dimension_contract_declaration() -> N
     assert "不承诺 baseline 恢复" in declaration.detail
     with pytest.raises(FrozenInstanceError):
         setattr(declaration, "detail", "changed")
-    dynamics = FieldDynamics((registration,), rng_factory=ConstantGaussianRngFactory())
+    dynamics = _construct_test_dynamics((registration,), rng_factory=ConstantGaussianRngFactory())
     assert dynamics.registry[0].contract_declarations == declarations
 
 
@@ -1316,7 +1660,7 @@ def test_derived_parameter_domain_rejection_is_atomic_no_runnable_object() -> No
             continue
         pytest.fail(f"Expected InvalidRegistrationError for {changes}, got {bad}")
     with pytest.raises(InvalidRegistrationError):
-        FieldDynamics(
+        _construct_test_dynamics(
             (replace(template, fast_e_fold_s=1.5),),
             rng_factory=ConstantGaussianRngFactory(),
         )
@@ -1791,7 +2135,7 @@ def test_default_settled_release_analytic_invariants_cover_exact_equilibria() ->
     assert max_entry_tick <= 280
     assert min_margin > 0.0
 
-    zero = FieldDynamics((registration,), rng_factory=ConstantGaussianRngFactory())
+    zero = _construct_test_dynamics((registration,), rng_factory=ConstantGaussianRngFactory())
     zero.move_attractor(AttractorMove(registration.dim_id, 0.0, "test", "zero command"))
     for _ in range(20_000 + 280):
         observation = zero.tick().dimensions[0]
@@ -1920,10 +2264,10 @@ def test_default_nonzero_baselines_match_relative_endpoint_and_branch_trajectori
     zero_registration = replace(
         biased_registration, dim_id=f"{dim_id}-zero", birth_bias=0.0
     )
-    biased = FieldDynamics(
+    biased = _construct_test_dynamics(
         (biased_registration,), rng_factory=ConstantGaussianRngFactory()
     )
-    zero = FieldDynamics((zero_registration,), rng_factory=ConstantGaussianRngFactory())
+    zero = _construct_test_dynamics((zero_registration,), rng_factory=ConstantGaussianRngFactory())
     biased.move_attractor(
         AttractorMove(dim_id, command, "test", "nonzero-baseline certificate anchor")
     )
@@ -2076,7 +2420,7 @@ def _measure_return_oscillation(
     to create the initial displacement, then attractor returned to baseline.
     """
     attractor_offset = initial_attractor_displacement
-    dynamics = FieldDynamics(
+    dynamics = _construct_test_dynamics(
         (registration,),
         rng_factory=ConstantGaussianRngFactory(),
     )
