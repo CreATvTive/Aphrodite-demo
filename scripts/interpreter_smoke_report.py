@@ -106,7 +106,7 @@ def main() -> int:
         print(line)
         md.append(line)
 
-    report = Path("docs/reports/interpreter_smoke_phase_2_2.md")
+    report = Path("docs/archive/reports/interpreter/interpreter_smoke_phase_2_2.md")
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
         "\n".join([

@@ -27,6 +27,7 @@ except BaseException as _st_err:
 else:
     _SENTENCE_TRANSFORMERS_IMPORT_ERROR = None
 
+from ._utils import _dedup_keep_order_values
 from .learned_lists import LearnedLists, ListState, refresh_state
 
 
@@ -81,13 +82,7 @@ def should_store_memory(text: str) -> bool:
 
 
 def _dedup_keep_order(items: List[str]) -> List[str]:
-    seen = set()
-    out: List[str] = []
-    for x in items:
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
-    return out
+    return _dedup_keep_order_values(items)
 
 
 def phrase_candidates(text: str, phrase_filter: PhraseFilter, max_candidates: int = 80) -> List[str]:

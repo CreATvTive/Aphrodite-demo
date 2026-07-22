@@ -1,3 +1,10 @@
+Status: HISTORICAL
+Authority-Scope: Pre-chatbox Live2D/demo architecture historical snapshot
+Superseded-By: docs/chatbox/phase-plan-v0.md
+Last-Verified: 2026-07-14
+
+> **HISTORICAL — 非当前指令：**正文中的“完整架构”“快速开始”“开发路线”和“协议”均为历史快照，不是 chatbox v0 指令。当前工程权威见 [`docs/chatbox/phase-plan-v0.md`](../docs/chatbox/phase-plan-v0.md)；身份边界见 [`docs/design/README.md`](../docs/design/README.md)。
+
 # Live2D 对话演示 - 技术架构文档
 
 本目录包含 "游戏式 AI 角色世界" 项目中 Live2D 对话演示模块的完整技术架构设计。

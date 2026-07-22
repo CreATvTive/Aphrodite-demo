@@ -115,7 +115,7 @@ def main() -> int:
     for r in rows:
         print(f"| {r['id']} | {r['cat']} | {r['in'][:24]} | {r['ok']} | {r['etype']} | {r['route']} | {r['poll']:.2f} | {r['tension']:.2f} | {r['dep']:.2f} | {r['vuln']:.2f} | {r['pause']} | {r['still']} | {r['conf']:.2f} | {r['errs']} |")
 
-    report = Path("docs/reports/interpreter_calibration_phase_2_3.md")
+    report = Path("docs/archive/reports/interpreter/interpreter_calibration_phase_2_3.md")
     report.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "# Interpreter Calibration Report (Phase 2.3a)",
